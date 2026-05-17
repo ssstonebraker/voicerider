@@ -1,0 +1,99 @@
+# ────────────────────────────────────────────────────────────────────────
+# Swift / SwiftPM build artifacts
+# ────────────────────────────────────────────────────────────────────────
+.build/
+.swiftpm/
+Package.resolved
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/
+*.swiftmodule
+*.swiftdoc
+*.swiftsourceinfo
+*.swiftpm
+*.o
+*.bc
+*.dylib
+*.dSYM/
+*.framework
+.netrc
+
+# ────────────────────────────────────────────────────────────────────────
+# App bundle (built artifact, reproducible from prod-build.sh)
+# ────────────────────────────────────────────────────────────────────────
+VoiceRider.app/
+*.app/
+
+# ────────────────────────────────────────────────────────────────────────
+# Personal release tooling — do NOT commit
+# ────────────────────────────────────────────────────────────────────────
+git-ship.sh
+
+# ────────────────────────────────────────────────────────────────────────
+# macOS finder / disk artifacts
+# ────────────────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# ────────────────────────────────────────────────────────────────────────
+# Editor / IDE
+# ────────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.iml
+.history/
+.cursor/
+.zed/
+
+# ────────────────────────────────────────────────────────────────────────
+# Logs (build, test, app runtime, profiling)
+# ────────────────────────────────────────────────────────────────────────
+*.log
+/tmp/voice*.log
+/tmp/voicerider*.log
+
+# ────────────────────────────────────────────────────────────────────────
+# Local config / secrets — defensive (we don't generate these, but
+# defending against accidental commits is cheap)
+# ────────────────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.cer
+secrets.plist
+
+# ────────────────────────────────────────────────────────────────────────
+# Test / coverage artifacts
+# ────────────────────────────────────────────────────────────────────────
+*.xcresult/
+coverage/
+*.profraw
+*.profdata
+
+# ────────────────────────────────────────────────────────────────────────
+# Misc working files
+# ────────────────────────────────────────────────────────────────────────
+*.bak
+*.orig
+*.tmp
+.swiftformat-diff

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>            <string>VoiceRider</string>
+    <key>CFBundleIdentifier</key>            <string>com.voicerider</string>
+    <key>CFBundleName</key>                  <string>VoiceRider</string>
+    <key>CFBundleDisplayName</key>           <string>VoiceRider</string>
+    <key>CFBundleShortVersionString</key>    <string>0.1.0</string>
+    <key>CFBundleVersion</key>               <string>1</string>
+    <key>CFBundlePackageType</key>           <string>APPL</string>
+    <key>CFBundleInfoDictionaryVersion</key> <string>6.0</string>
+    <key>LSMinimumSystemVersion</key>        <string>13.0</string>
+
+    <!-- Hide from Dock and CMD-Tab; menu-bar item only -->
+    <key>LSUIElement</key>                   <true/>
+
+    <!-- TCC prompt strings -->
+    <key>NSMicrophoneUsageDescription</key>
+        <string>VoiceRider records audio while you hold the dictation hotkey.</string>
+
+    <!-- App Transport Security: allow plain HTTP only to the configured ASR
+         host. Plain HTTP is required because the LAN ASR server does not
+         terminate TLS. NSAllowsArbitraryLoads is intentionally not used. -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSExceptionDomains</key>
+        <dict>
+            <key>linux</key>
+            <dict>
+                <key>NSExceptionAllowsInsecureHTTPLoads</key><true/>
+                <key>NSIncludesSubdomains</key><false/>
+            </dict>
+        </dict>
+    </dict>
+</dict>
+</plist>
