@@ -238,20 +238,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.messageText = "VoiceRider was rebuilt"
         alert.informativeText = """
-            Ad-hoc code signing assigns a new identity hash to every build. \
-            macOS resets some Privacy & Security grants when that hash changes.
+            Ad-hoc code signing produces a new identity hash for every build. \
+            macOS resets some Privacy & Security grants when that hash changes \
+            (Apple DTS confirms this is by design — ref. forum thread #795739).
 
             You may need to re-grant:
               • Accessibility
               • Input Monitoring
+
+            If VoiceRider does NOT appear in the Input Monitoring list:
+              1. Click the + button in that pane.
+              2. Select VoiceRider in /Applications (Reveal in Finder below).
+              3. Toggle it ON.
             """
         alert.addButton(withTitle: "Open Settings")
+        alert.addButton(withTitle: "Reveal in Finder")
         alert.addButton(withTitle: "Don't show again")
         let resp = alert.runModal()
-        if resp == .alertFirstButtonReturn {
+        switch resp {
+        case .alertFirstButtonReturn:
             perms.openSettingsPanes()
-        } else if resp == .alertSecondButtonReturn {
+        case .alertSecondButtonReturn:
+            // Pre-position Finder so the user can drag VoiceRider.app
+            // into the Input Monitoring list, or right-click → Get Info.
+            if let appURL = Bundle.main.bundleURL as URL? {
+                NSWorkspace.shared.activateFileViewerSelecting([appURL])
+            }
+        case .alertThirdButtonReturn:
             UserDefaults.standard.set(true, forKey: "voicerider.suppressCDHashAlert")
+        default:
+            break
         }
     }
 

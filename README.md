@@ -469,6 +469,47 @@ permissions to bundle id + signature + path; `swift run` produces a
 different binary path each build. Use `./prod-build.sh --install` and
 launch from `/Applications`.
 
+### "VoiceRider doesn't appear in Input Monitoring" (or grants reset every rebuild)
+
+This is a fundamental limitation of **ad-hoc code signing**, not a bug
+in VoiceRider. Per Apple DTS engineer Quinn "The Eskimo!" in
+[Developer Forum #795739](https://developer.apple.com/forums/thread/795739):
+
+> "macOS tracks code identity using the code's designated requirement.
+> Ad hoc signed code does not include a stable DR, and thus macOS is
+> unable to tell that version N+1 of your app is the 'same code' as
+> version N."
+
+Practical consequences:
+
+- **Every rebuild** of VoiceRider (including `./prod-build.sh
+  --install`) produces a new code-directory hash. macOS treats it as
+  a brand-new app, and any previously granted Accessibility / Input
+  Monitoring permissions are invalidated.
+- **The macOS prompt sometimes does not appear** after a re-grant
+  cycle. VoiceRider calls both `IOHIDRequestAccess()` (IOKit) and
+  `CGRequestListenEventAccess()` (Quartz) to maximize the chance, but
+  Apple confirms a known bug
+  ([Forum #128641](https://developer.apple.com/forums/thread/128641),
+  rdar://55284204) where the **`+` button in Input Monitoring is
+  hidden when the list is empty**.
+- **Workaround when the prompt doesn't appear:**
+    1. Open *System Settings → Privacy & Security → Input Monitoring*.
+    2. If you see no `+` button, first toggle ON some other app already
+       in the list to force the `+` to appear, then toggle that other
+       app back off.
+    3. Click `+`, navigate to `/Applications/VoiceRider.app`, select it.
+    4. Toggle VoiceRider ON. Repeat for *Accessibility* if needed.
+    5. Quit and relaunch VoiceRider.
+- **VoiceRider's cdhash-change alert** (the dialog that appears after
+  a rebuild) has a *Reveal in Finder* button that pre-selects
+  `VoiceRider.app` so you can drag it into the Settings panel.
+
+The only way to make grants persist across rebuilds is to sign with
+a stable identity (Apple Developer ID, $99/year). For end users
+installing once, this isn't an issue — the prompt fires on first
+launch, they grant, and grants persist until they update.
+
 ### Menu-bar icon not visible (notch'd MacBook Pro)
 
 macOS silently clips menu-bar items that don't fit between the app

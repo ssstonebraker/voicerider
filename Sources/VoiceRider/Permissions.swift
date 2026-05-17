@@ -59,9 +59,26 @@ final class Permissions: MicrophoneStatusProviding {
 
     /// Triggers the Input Monitoring prompt the first time. Subsequent calls
     /// return the current `IOHIDAccessType` cheaply.
+    ///
+    /// **Belt-and-suspenders:** calls BOTH `IOHIDRequestAccess` (IOKit)
+    /// AND `CGRequestListenEventAccess` (Quartz). These hit different
+    /// TCC code paths; ad-hoc-signed LSUIElement apps sometimes fail to
+    /// trigger the prompt via one but succeed via the other. Calling
+    /// both maximizes the chance the user sees the prompt on first
+    /// launch.
+    ///
+    /// References:
+    ///  - Apple DTS thread #795739 — ad-hoc signing has no stable
+    ///    designated requirement, so TCC re-prompts on rebuild.
+    ///  - Apple Forum thread #128641 — Apple bug r.55284204: Input
+    ///    Monitoring `+` button hidden when list empty.
     @discardableResult
     func requestInputMonitoring() -> IOHIDAccessType {
         _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+        // Quartz Event Services equivalent — different code path,
+        // sometimes triggers the prompt when IOHIDRequestAccess alone
+        // does not (especially for LSUIElement apps).
+        _ = CGRequestListenEventAccess()
         let access = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
         Log.perms.log("input-monitoring access=\(access.rawValue, privacy: .public)")
         return access
