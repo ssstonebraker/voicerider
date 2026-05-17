@@ -1,15 +1,28 @@
 # Reference server setup: Canary-Qwen 2.5B on Linux + RTX 4080
 
-This is the original VoiceRider development server. It ran on Linux Mint
-with an RTX 4080 (16 GB VRAM) and weights stored on a 1 TB SSD mounted
-at `/mnt/1tbssd/`. The instructions below assume that exact setup; if
-your paths or distro differ, adjust accordingly — only the protocol
-matters to VoiceRider, not the path layout.
+This is a working reference for running
+[NVIDIA Canary-Qwen 2.5B](https://huggingface.co/nvidia/canary-qwen-2.5b)
+behind an OpenAI-compatible HTTP endpoint that VoiceRider can talk to.
+The original VoiceRider development server ran this stack on Linux
+with an RTX 4080 (16 GB VRAM); the instructions below have been
+generalised so they don't reference a specific mount path.
 
-> **This document is a snapshot of one working setup, not a polished
-> production deployment guide.** Read [README → Server protocol](../README.md#server-protocol)
-> first to decide whether you want to run NeMo locally or use a
-> simpler alternative server.
+> **One environment variable rules them all.** Throughout this
+> document, `$ASR_ROOT` is the base directory for everything related
+> to the ASR server — model weights, the Python virtualenv, the
+> server source. Pick a path with ≥30 GB of fast disk space (e.g.
+> `/srv/asr`, `/opt/canary`, `/data/asr`, an SSD mount, your home
+> directory if you don't care about that), then before following any
+> step run:
+>
+> ```bash
+> export ASR_ROOT=/srv/asr      # ← choose your own
+> echo "export ASR_ROOT=$ASR_ROOT" >> ~/.bashrc
+> ```
+>
+> Read [README → Server protocol](../README.md#server-protocol) first
+> if you want to know whether NeMo is the right choice for you or
+> whether one of the lighter-weight alternative servers fits better.
 
 ---
 
@@ -19,7 +32,7 @@ matters to VoiceRider, not the path layout.
 |---|---|---|
 | NVIDIA driver ≥550 | bf16 + CUDA 12.4 wheels | `nvidia-smi` reports CUDA 12.4+ |
 | CUDA-capable PyTorch | bf16 inference on RTX 4080 | covered by `cu124` pip wheels in step 4 |
-| ≥30 GB free disk | weights + Python deps | `df -h /mnt/1tbssd` |
+| ≥30 GB free disk | weights + Python deps | `df -h $ASR_ROOT` |
 | Python 3.10 or 3.11 | NeMo 2.x ceiling | `python3 --version` |
 
 If `python3` is 3.12+, install 3.11 via deadsnakes:
@@ -42,15 +55,14 @@ sudo apt install -y build-essential git curl ffmpeg libsndfile1 \
 
 ## 3. Directory layout
 
-The reference server pins everything to `/mnt/1tbssd/` (a fast SSD mount
-that isn't `$HOME`). Substitute your own path; the rest of this doc
-assumes the original layout.
+All server data lives under `$ASR_ROOT` (set in the intro). If you
+haven't exported it yet, do that now.
 
 ```bash
-sudo mkdir -p /mnt/1tbssd/models /mnt/1tbssd/git
-sudo chown -R "$USER:$USER" /mnt/1tbssd/models /mnt/1tbssd/git
-mkdir -p /mnt/1tbssd/git/canary-server
-cd /mnt/1tbssd/git/canary-server
+sudo mkdir -p $ASR_ROOT/models $ASR_ROOT/git
+sudo chown -R "$USER:$USER" $ASR_ROOT/models $ASR_ROOT/git
+mkdir -p $ASR_ROOT/git/canary-server
+cd $ASR_ROOT/git/canary-server
 ```
 
 ## 4. Python virtualenv + dependencies
@@ -87,15 +99,15 @@ Pin the Hugging Face cache to the SSD so weights don't end up under
 `$HOME`:
 
 ```bash
-export HF_HOME=/mnt/1tbssd/models/hf-cache
+export HF_HOME=$ASR_ROOT/models/hf-cache
 mkdir -p "$HF_HOME"
-echo 'export HF_HOME=/mnt/1tbssd/models/hf-cache' >> ~/.bashrc
+echo 'export HF_HOME=$ASR_ROOT/models/hf-cache' >> ~/.bashrc
 
 huggingface-cli download nvidia/canary-qwen-2.5b \
-    --local-dir /mnt/1tbssd/models/canary-qwen-2.5b \
+    --local-dir $ASR_ROOT/models/canary-qwen-2.5b \
     --local-dir-use-symlinks False
 
-ls -lh /mnt/1tbssd/models/canary-qwen-2.5b
+ls -lh $ASR_ROOT/models/canary-qwen-2.5b
 # Should contain config.yaml + .nemo / weight shards (~10 GB)
 ```
 
@@ -106,7 +118,7 @@ embeds `model.audio_locator_tag`.
 
 ## 6. The server
 
-Full server source lives at `/mnt/1tbssd/git/canary-server/server.py`.
+Full server source lives at `$ASR_ROOT/git/canary-server/server.py`.
 The complete file:
 
 ```python
@@ -128,7 +140,7 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("canary-asr")
 
-MODEL_DIR = os.environ.get("MODEL_DIR", "/mnt/1tbssd/models/canary-qwen-2.5b")
+MODEL_DIR = os.environ.get("MODEL_DIR", "$ASR_ROOT/models/canary-qwen-2.5b")
 MODEL_ID  = os.environ.get("MODEL_ID",  "nvidia/canary-qwen-2.5b")
 DEVICE    = "cuda" if torch.cuda.is_available() else "cpu"
 DTYPE     = torch.bfloat16 if DEVICE == "cuda" else torch.float32
@@ -209,9 +221,9 @@ if __name__ == "__main__":
 ## 7. First-run smoke test
 
 ```bash
-cd /mnt/1tbssd/git/canary-server
+cd $ASR_ROOT/git/canary-server
 source .venv/bin/activate
-export HF_HOME=/mnt/1tbssd/models/hf-cache
+export HF_HOME=$ASR_ROOT/models/hf-cache
 python server.py
 # wait for:  Model ready.
 # then:      Uvicorn running on http://0.0.0.0:8000
@@ -260,12 +272,12 @@ Wants=network-online.target
 Type=simple
 User=${USERNAME}
 Group=${USERNAME}
-WorkingDirectory=/mnt/1tbssd/git/canary-server
-Environment=HF_HOME=/mnt/1tbssd/models/hf-cache
-Environment=MODEL_DIR=/mnt/1tbssd/models/canary-qwen-2.5b
+WorkingDirectory=$ASR_ROOT/git/canary-server
+Environment=HF_HOME=$ASR_ROOT/models/hf-cache
+Environment=MODEL_DIR=$ASR_ROOT/models/canary-qwen-2.5b
 Environment=PORT=8000
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/mnt/1tbssd/git/canary-server/.venv/bin/python /mnt/1tbssd/git/canary-server/server.py
+ExecStart=$ASR_ROOT/git/canary-server/.venv/bin/python $ASR_ROOT/git/canary-server/server.py
 Restart=on-failure
 RestartSec=5
 # Allow up to 5 minutes for cold-load of the model
@@ -339,7 +351,7 @@ same SSD; serve on a different port via a parallel `systemd` unit.
 
 ```bash
 huggingface-cli download nvidia/parakeet-tdt-0.6b-v3 \
-    --local-dir /mnt/1tbssd/models/parakeet-tdt-0.6b-v3 \
+    --local-dir $ASR_ROOT/models/parakeet-tdt-0.6b-v3 \
     --local-dir-use-symlinks False
 ```
 
@@ -382,7 +394,7 @@ real-time use.
 - **HF cache leaking into `$HOME`.** Confirm:
 
   ```bash
-  du -sh /mnt/1tbssd/models/hf-cache    # should grow
+  du -sh $ASR_ROOT/models/hf-cache    # should grow
   du -sh ~/.cache/huggingface 2>/dev/null || echo "no home cache (good)"
   ```
 

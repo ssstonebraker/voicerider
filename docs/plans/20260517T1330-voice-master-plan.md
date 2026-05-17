@@ -261,7 +261,7 @@ permission grants are tied to it.
 
 ## 1.1 How The System Works NOW (before implementation)
 
-There is no existing `voice` codebase. The directory `/Users/braker/git/voice`
+There is no existing `voice` codebase. The directory `$REPO_ROOT`
 is empty as of plan authoring. The pipeline that already works on this
 Mac is:
 

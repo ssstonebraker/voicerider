@@ -255,12 +255,15 @@ Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard)
 (~5.6% WER) and runs in ~10–14 GB of VRAM at bf16, which fits on a
 single RTX 4080.
 
-> **This setup is illustrative, not prescriptive.** The maintainer's
-> server is on Linux Mint with weights and code on a 1 TB SSD mounted
-> at `/mnt/1tbssd/`. Your paths, distro, and hardware will differ.
-> Anything that honors the [contract above](#server-protocol) works —
-> see [alternatives](#alternative-servers) below if you don't want to
-> run NeMo locally.
+> **This setup is illustrative, not prescriptive.** The reference
+> instructions below place all server data under a single base
+> directory referred to as `$ASR_ROOT` (e.g. `/srv/asr`,
+> `/opt/canary`, `/data/asr` — wherever you have ≥30 GB of fast
+> disk). Set `export ASR_ROOT=/your/path` once before following the
+> guide; every command below uses it. Your distro and hardware will
+> differ — anything that honors the [contract above](#server-protocol)
+> works — see [alternatives](#alternative-servers) below if you don't
+> want to run NeMo locally.
 
 ### What you need
 
@@ -273,7 +276,7 @@ single RTX 4080.
   Ubuntu-derived; nothing distro-specific.
 - **Python.** 3.10 or 3.11. NeMo 2.x doesn't yet support 3.12.
 - **Disk.** ~20 GB for the model + Python deps. The reference setup
-  pins this to a non-`$HOME` SSD via `HF_HOME=/mnt/1tbssd/models/hf-cache`.
+  pins this to a non-`$HOME` SSD via `HF_HOME=$ASR_ROOT/models/hf-cache`.
 
 ### Stack
 
@@ -296,13 +299,13 @@ setup notes — apt packages, virtualenv, model download via
 [`docs/server-canary-qwen-setup.md`](docs/server-canary-qwen-setup.md).
 
 ```python
-# /mnt/1tbssd/git/canary-server/server.py  (abbreviated)
+# $ASR_ROOT/git/canary-server/server.py  (abbreviated)
 import os, tempfile, torch, soundfile as sf, librosa
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 from nemo.collections.speechlm2.models import SALM
 
-MODEL_DIR = os.environ.get("MODEL_DIR", "/mnt/1tbssd/models/canary-qwen-2.5b")
+MODEL_DIR = os.environ.get("MODEL_DIR", "$ASR_ROOT/models/canary-qwen-2.5b")
 DEVICE    = "cuda" if torch.cuda.is_available() else "cpu"
 DTYPE     = torch.bfloat16 if DEVICE == "cuda" else torch.float32
 
@@ -351,10 +354,10 @@ async def transcribe(file: UploadFile = File(...),
   SpeechLM, not a pure ASR model — it accepts a textual prompt and
   steers transcription accordingly. VoiceRider doesn't currently send
   one (omitted = "Transcribe the following:" default).
-- **Model on SSD, not `$HOME`.** The maintainer pins
-  `HF_HOME=/mnt/1tbssd/models/hf-cache` so weights live on a fast SSD
-  rather than the system disk. This is purely operational, not a
-  protocol requirement.
+- **Model weights belong on fast disk, not in `$HOME`.** The
+  reference setup pins `HF_HOME=$ASR_ROOT/models/hf-cache` so weights
+  live on whichever SSD `$ASR_ROOT` resolves to, not on the system
+  disk. This is purely operational, not a protocol requirement.
 
 ## Alternative servers
 
