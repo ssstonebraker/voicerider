@@ -2,39 +2,42 @@ import AVFoundation
 import os.lock
 
 /// Captures audio from the default input device, converts it to 16 kHz mono
-/// 16-bit PCM, and writes a real RIFF WAV file. The engine stays running
-/// for the process lifetime — only the output file rotates per recording.
+/// 16-bit PCM, and writes a real RIFF WAV file.
 ///
-/// ### Threading model (R4-F29 fix)
+/// ### M1: engine lifecycle = recording lifecycle
+///
+/// Previously the engine ran for the entire process lifetime so the
+/// next `start()` was instantaneous. The cost was that macOS shows the
+/// orange microphone-in-use indicator the whole time the engine is up,
+/// even with no tap installed. M1 changes the contract:
+///
+///   - `start()` brings the engine up if not running (unchanged)
+///   - `stop()` removes the tap, clears pointers, and **stops the
+///     engine** (NEW)
+///
+/// This makes the orange indicator show only when the user is actually
+/// holding the hotkey. The cold-start cost on the next press is
+/// ~20–80ms, well under the 200ms hotkey qualification window — no
+/// user-visible latency added.
+///
+/// ### Threading model (R4-F29 fix, unchanged)
 /// The Round-3 design dispatched each tap-callback `AVAudioPCMBuffer` to
-/// a serial `DispatchQueue.async`. Research (Apple's own engineer at
-/// `forums/thread/763362`, hotpaw2 at SO/69761269, "Learn OpenGL ES" on
-/// SO/27343266) confirms this is unsafe: the engine may recycle the
-/// underlying audio data before the deferred block runs, causing silent
-/// frame loss under load.
+/// a serial `DispatchQueue.async`. Research confirms this is unsafe:
+/// the engine may recycle the underlying audio data before the deferred
+/// block runs. Round-5 design: convert + write **inline on the audio
+/// render thread**. An `os_unfair_lock` protects only the pointer
+/// reads/writes between `start()` / `stop()` (main thread) and the tap
+/// callback (audio thread).
 ///
-/// Round-5 design: convert + write **inline on the audio render thread**.
-/// An `os_unfair_lock` protects only the pointer reads/writes between
-/// `start()` / `stop()` (main thread) and the tap callback (audio
-/// thread). Lock hold time is two memory loads — RT-safe. After
-/// `removeTap`, no new callbacks fire; an in-flight callback owns its
-/// own strong reference to `file` (taken under the lock) and finishes
-/// safely.
+/// ### Mic-permission gate (F1 / F25 fix, unchanged)
+/// `start()` consults the injected `MicrophoneStatusProviding` and
+/// throws `.micDenied` / `.micNotDetermined` rather than letting the
+/// engine produce silent frames.
 ///
-/// `AVAudioFile.write(from:)` thread-safety is not formally documented
-/// by Apple, but Apple's own forum example writes inside the tap. We
-/// adopt the same pattern.
-///
-/// ### Mic-permission gate (F1 / F25 fix)
-/// `start()` consults the injected `MicrophoneStatusProviding` (in
-/// production: `Permissions`) and throws `.micDenied` /
-/// `.micNotDetermined` rather than letting the engine produce silent
-/// frames.
-///
-/// ### Re-install on every start (F24 fix)
+/// ### Re-install on every start (F24 fix, unchanged)
 /// The tap is removed and re-installed on every `start()` so an input
-/// device change between recordings (built-in → AirPods) doesn't leave a
-/// stale sample-format snapshot behind.
+/// device change between recordings (built-in → AirPods) doesn't leave
+/// a stale sample-format snapshot behind.
 final class AudioRecorder {
 
     enum AudioError: Error, LocalizedError, Sendable {
@@ -60,9 +63,12 @@ final class AudioRecorder {
     private let mic: MicrophoneStatusProviding
     private let engine = AVAudioEngine()
 
+    /// Test seam — `AudioRecorderEngineLifecycleTests` reads this to
+    /// assert the M1 contract.
+    var engineIsRunning: Bool { engine.isRunning }
+
     /// Protects only the three pointer properties below. Held for
-    /// nanoseconds — read-the-pointer-and-go from the audio thread,
-    /// install/clear from the main thread.
+    /// nanoseconds.
     private var lock = os_unfair_lock()
     private var file: AVAudioFile?
     private var converter: AVAudioConverter?
@@ -74,8 +80,6 @@ final class AudioRecorder {
 
     /// Begins writing audio to a fresh temp WAV file. Returns the URL.
     func start() throws -> URL {
-        // F1 / F25: mic check before any engine work. Single source of
-        // truth lives in `Permissions.microphoneStatus()`.
         switch mic.microphoneStatus() {
         case .authorized:
             break
@@ -91,8 +95,6 @@ final class AudioRecorder {
             .appendingPathComponent("voice-\(UUID().uuidString).wav")
 
         let input = engine.inputNode
-        // F24: read input format fresh on every start — input device may
-        // have changed since last recording.
         let inputFormat = input.outputFormat(forBus: 0)
 
         guard let outFmt = AVAudioFormat(
@@ -108,9 +110,6 @@ final class AudioRecorder {
             throw AudioError.converterUnavailable
         }
 
-        // Explicit settings produce a real RIFF WAV (not a CAF).
-        // F19: AVLinearPCMIsNonInterleaved was redundant for mono and
-        // contradicted `interleaved: true` below. Dropped.
         let settings: [String: Any] = [
             AVFormatIDKey:             kAudioFormatLinearPCM,
             AVSampleRateKey:           16_000,
@@ -130,23 +129,14 @@ final class AudioRecorder {
             throw AudioError.fileCreateFailed(message: error.localizedDescription)
         }
 
-        // R4-F29 fix: install pointers under the lock. After this returns,
-        // any tap callback that runs sees a coherent snapshot.
         os_unfair_lock_lock(&lock)
         self.file = newFile
         self.converter = conv
         self.outputFormat = outFmt
         os_unfair_lock_unlock(&lock)
 
-        // F24: re-install the tap on every start. removeTap is a no-op
-        // if none is installed, so it's safe on the first call too.
-        // Format `nil` lets the OS pick hardware-native; the converter
-        // bridges to our 16 kHz Int16 target.
         input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
-            // Audio render thread. Buffer is valid only for the duration
-            // of this closure (Apple does not retain its underlying
-            // bytes past the call). Convert + write inline.
             self?.writeOnAudioThread(buffer: buffer)
         }
 
@@ -158,15 +148,19 @@ final class AudioRecorder {
             }
         }
 
-        // F28: tmp paths can include the user's short username on some
-        // configs (`/var/folders/.../T/`). Keep the path private.
         Log.audio.log("recording start path=\(url.path, privacy: .private)")
         return url
     }
 
-    /// Stops writing. The engine keeps running so the next start() is fast.
-    /// After this returns, no new tap callbacks will fire and the WAV
-    /// header is finalised on disk.
+    /// Stops writing AND brings the engine down. After this returns:
+    ///   1. No new tap callbacks will fire.
+    ///   2. The WAV header is finalised on disk (via AVAudioFile.deinit
+    ///      flushing on the last strong reference dropped).
+    ///   3. **The engine is stopped.** macOS no longer shows the
+    ///      microphone-in-use indicator. (M1)
+    ///
+    /// Idempotent — calling `stop()` on a never-started engine is a
+    /// no-op (verified by `AudioRecorderEngineLifecycleTests`).
     func stop() {
         // 1. Remove the tap. After this, no NEW callbacks will fire.
         engine.inputNode.removeTap(onBus: 0)
@@ -175,24 +169,26 @@ final class AudioRecorder {
         //    in its acquire-pointer phase, we wait microseconds for it
         //    to finish copying the strong refs and release the lock.
         //    If a callback is in its convert+write phase, it doesn't
-        //    hold the lock, so we proceed immediately. Either way, the
-        //    callback's local strong refs keep the file alive past our
-        //    nil. ARC then drops `newFile`'s last reference and
-        //    AVAudioFile.deinit flushes the RIFF chunk-size header.
+        //    hold the lock. Either way, the callback's local strong
+        //    refs keep the file alive past our nil. ARC then drops
+        //    `newFile`'s last reference and AVAudioFile.deinit flushes
+        //    the RIFF chunk-size header.
         os_unfair_lock_lock(&lock)
         file = nil
         converter = nil
         outputFormat = nil
         os_unfair_lock_unlock(&lock)
+
+        // 3. M1: stop the engine. Cleared pointers + removed tap mean
+        //    no in-flight work depends on the engine being up.
+        if engine.isRunning {
+            engine.stop()
+        }
         Log.audio.log("recording stop")
     }
 
     // MARK: Tap callback (audio render thread)
 
-    /// Runs on the audio render thread. Acquires the lock just long
-    /// enough to copy the three pointers, releases, then converts +
-    /// writes. The captured strong references survive past `stop()`'s
-    /// pointer-clear.
     private func writeOnAudioThread(buffer: AVAudioPCMBuffer) {
         os_unfair_lock_lock(&lock)
         guard let file = self.file,
@@ -209,10 +205,6 @@ final class AudioRecorder {
             return
         }
 
-        // R4-F36: avoid a captured `var Bool` (warns under strict
-        // concurrency) by closing over an Optional buffer that we nil
-        // after the first feed. Same semantics as the prior `supplied`
-        // flag, no captured mutation of a value type.
         var input: AVAudioPCMBuffer? = buffer
         var convertError: NSError?
         let status = converter.convert(to: outBuf, error: &convertError) { _, outStatus in

@@ -1,4 +1,5 @@
 import AppKit
+import CommonCrypto
 
 /// Owns the app's single source of truth (`state`) and routes hotkey events
 /// through the recording → transcribing → pasting pipeline.
@@ -6,6 +7,20 @@ import AppKit
 /// All state transitions happen on the main thread. Subsystems do not
 /// track their own state — they answer questions about hardware (is the
 /// engine running?) but the user-visible state machine lives here.
+///
+/// ### Trace points (overlay-diagnosis plan)
+///
+///   - `trace:ad-handlearm`     — L5 entry to handleArm()
+///   - `trace:ad-handlecommit`  — L6, after recorder.start() succeeds or fails
+///   - `trace:state-didset`     — L7, every state mutation
+///
+/// ### P3: cdhash-change detection
+///
+/// On launch we hash `/Applications/VoiceRider.app/Contents/MacOS/VoiceRider`
+/// and compare to `voicerider.lastSeenCDHash` in UserDefaults. If different
+/// AND a TCC service is denied, we emit a single `Log.app.warning` AND show
+/// an `NSAlert` once per cdhash (the user can dismiss with "Don't show
+/// again" via `voicerider.suppressCDHashAlert`).
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
@@ -37,19 +52,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let perms = Permissions()
     private lazy var recorder = AudioRecorder(mic: perms)
     private let paster = Paster()
-    private lazy var status: StatusItemController = StatusItemController()
+    private lazy var status: StatusItemController = StatusItemController(perms: perms)
     private lazy var overlay: RecordingOverlay = RecordingOverlay()
     private var transcriber: Transcriber?
 
-    // F8: was `var hotkey: HotkeyMonitor!`. Now a real Optional that
-    // becomes non-nil exactly once, in `applicationDidFinishLaunching`,
-    // and is guard-let'd at use sites.
     private var hotkey: HotkeyMonitor?
 
     // MARK: State
 
     private var state: AppState = .idle {
         didSet {
+            // L7: every state transition logged with stable tags.
+            Trace.state(prev: oldValue.tag, next: self.state.tag)
             status.render(state)
             overlay.render(state)
             Log.app.log("state -> \(String(describing: self.state), privacy: .public)")
@@ -63,13 +77,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         status.onQuit = { NSApp.terminate(nil) }
         status.onOpenPermissions = { [weak self] in self?.perms.openSettingsPanes() }
+        status.onRecheckPermissions = { [weak self] in
+            self?.status.refreshPermissions()  // P2
+        }
+        status.onShowTrace = { [weak self] in
+            self?.openConsoleAppFiltered()  // diagnostic helper
+        }
 
         perms.requestMicrophone()
         perms.requestAccessibility(prompt: true)
         let inputAccess = perms.requestInputMonitoring()
 
-        // Build the Transcriber. If `voicerider.modelName` is malformed
-        // (CRLF / disallowed chars) we surface a precise error and stop.
+        // P3: cdhash-change detection.
+        runCDHashCheck()
+
+        // Initial permission render so the menu shows ✓/✗ from launch.
+        status.refreshPermissions()
+
         let cfg = Config.load()
         do {
             transcriber = try Transcriber(
@@ -90,7 +114,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.hotkey = monitor
 
         if !monitor.start() {
-            // F16: surface the precise denial when we can identify it.
             if inputAccess == kIOHIDAccessTypeDenied {
                 setError("Input Monitoring denied. Open System Settings → Privacy & Security → Input Monitoring.")
             } else if !perms.requestAccessibility(prompt: false) {
@@ -104,6 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Hotkey handlers (main thread)
 
     private func handleArm() {
+        Trace.ad("handlearm", "prev=\(state.tag)")
         if state == .idle { state = .arming }
     }
 
@@ -112,11 +136,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleCommit() {
+        Trace.ad("handlecommit", "prev=\(state.tag)")
         guard state == .arming else { return }
         do {
             currentWav = try recorder.start()
+            Trace.ad("handlecommit-recorder-ok", "wav=\(currentWav?.lastPathComponent ?? "nil")")
             state = .recording
         } catch {
+            Trace.ad("handlecommit-recorder-err", "err=\(String(describing: error))")
             setError("mic: \(error.localizedDescription)")
         }
     }
@@ -133,10 +160,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             currentWav = nil
             state = .transcribing
-            // F7: the URLSession completion handler runs on a background
-            // thread. Wrap the body in `Task { @MainActor in ... }` so
-            // every touch of `self.state` and `handleTranscribeResult`
-            // is statically isolated to the main actor.
             transcriber.transcribe(wav: wav) { [weak self] result in
                 Task { @MainActor [weak self] in
                     try? FileManager.default.removeItem(at: wav)
@@ -172,5 +195,89 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         errorClearWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
+    }
+
+    // MARK: P3 — cdhash detection
+
+    private func runCDHashCheck() {
+        guard let path = Bundle.main.executablePath else { return }
+        let url = URL(fileURLWithPath: path)
+        let current: String
+        do {
+            current = try AppDelegate.computeCDHash(of: url)
+        } catch {
+            Log.app.error("cdhash compute failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        let lastSeen = UserDefaults.standard.string(forKey: "voicerider.lastSeenCDHash")
+
+        let result = CDHashDetection.detect(current: current, lastSeen: lastSeen)
+        Trace.perms("cdhash", "current=\(current.prefix(12)) lastSeen=\(lastSeen?.prefix(12) ?? "nil") result=\(result.tag)")
+
+        UserDefaults.standard.set(current, forKey: "voicerider.lastSeenCDHash")
+
+        if case .changed = result {
+            // Only warn once per (new) cdhash. If the user explicitly
+            // suppressed the alert before, honor that.
+            let suppressed = UserDefaults.standard.bool(forKey: "voicerider.suppressCDHashAlert")
+            let acc = perms.requestAccessibility(prompt: false)
+            let inp = perms.inputMonitoringStatus()
+            let denied = !acc || inp != kIOHIDAccessTypeGranted
+            if denied && !suppressed {
+                // R4: defer the alert past `applicationDidFinishLaunching`
+                // so the modal doesn't block hotkey monitor installation.
+                // Without this, presses during the dialog are dropped.
+                DispatchQueue.main.async { [weak self] in
+                    self?.showCDHashAlert()
+                }
+            }
+        }
+    }
+
+    private func showCDHashAlert() {
+        let alert = NSAlert()
+        alert.messageText = "VoiceRider was rebuilt"
+        alert.informativeText = """
+            Ad-hoc code signing assigns a new identity hash to every build. \
+            macOS resets some Privacy & Security grants when that hash changes.
+
+            You may need to re-grant:
+              • Accessibility
+              • Input Monitoring
+            """
+        alert.addButton(withTitle: "Open Settings")
+        alert.addButton(withTitle: "Don't show again")
+        let resp = alert.runModal()
+        if resp == .alertFirstButtonReturn {
+            perms.openSettingsPanes()
+        } else if resp == .alertSecondButtonReturn {
+            UserDefaults.standard.set(true, forKey: "voicerider.suppressCDHashAlert")
+        }
+    }
+
+    /// SHA-256 of the executable as a hex string. Stable across `cp -R`
+    /// (since `cp -R` preserves bytes), changes when the binary is
+    /// recompiled and re-codesigned. Not the actual codesign cdhash, but
+    /// serves the same purpose: a fingerprint of "is this the same build
+    /// I saw last launch?".
+    ///
+    /// R7: guard against empty Data. CC_SHA256 with a nil pointer is
+    /// undefined behavior. Empty input maps to the SHA-256 of zero bytes
+    /// (well-known constant); we choose to return the zero hash here so
+    /// callers can pin the contract.
+    private static func computeCDHash(of file: URL) throws -> String {
+        let data = try Data(contentsOf: file)
+        var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        data.withUnsafeBytes { (buf: UnsafeRawBufferPointer) in
+            guard let base = buf.baseAddress, !buf.isEmpty else { return }
+            _ = CC_SHA256(base, CC_LONG(data.count), &hash)
+        }
+        return hash.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func openConsoleAppFiltered() {
+        // Best-effort: open Console.app. The user can paste the predicate
+        // from the README. We can't pre-fill the search field via URL.
+        NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Console.app"))
     }
 }

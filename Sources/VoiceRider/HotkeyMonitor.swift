@@ -10,6 +10,16 @@ import AppKit
 /// accidental triggers from short modifier presses that are part of normal
 /// shortcuts.
 ///
+/// ### Trace points (overlay-diagnosis plan)
+///
+/// This file emits five trace points along links L1–L4 of the chain:
+///
+///   - `trace:tap-callback`        — L1, every CGEventTap callback fire
+///   - `trace:hk-keycode-match`     — L2, after keycode comparison
+///   - `trace:hk-toggle`            — L3, rightOptDown transition
+///   - `trace:hk-onarm`             — L4, before delivering onArm() to AppDelegate
+///   - `trace:hk-oncommit`          — L4 (commit branch), before delivering onCommit()
+///
 /// ### Left/right disambiguation (F22 fix)
 /// We **toggle** `rightOptDown` on every `keycode == 61` `flagsChanged`
 /// event. The `.maskAlternate` bit is the OR of left+right and cannot be
@@ -84,8 +94,6 @@ final class HotkeyMonitor {
     }
 
     deinit {
-        // Tear down the tap synchronously. `deinit` is nonisolated, but
-        // these CF / DispatchWorkItem APIs are thread-safe to call here.
         if let tap {
             CGEvent.tapEnable(tap: tap, enable: false)
         }
@@ -99,17 +107,12 @@ final class HotkeyMonitor {
 
     // MARK: Public
 
-    /// Installs the event tap. Returns `false` if either Accessibility or
-    /// Input Monitoring is missing — caller should surface a permission
-    /// error.
     func start() -> Bool {
         guard tap == nil else { return true }
 
         let mask = (1 << CGEventType.flagsChanged.rawValue) |
                    (1 << CGEventType.keyDown.rawValue)
 
-        // F12: passRetained — the C tap holds a strong reference for its
-        // lifetime. Matching release() lives in `stop()` / `deinit`.
         let retained = Unmanaged.passRetained(self).toOpaque()
 
         guard let tap = CGEvent.tapCreate(
@@ -120,7 +123,6 @@ final class HotkeyMonitor {
             callback: HotkeyMonitor.callback,
             userInfo: retained
         ) else {
-            // Tap creation failed; release the retain we just took.
             Unmanaged<HotkeyMonitor>.fromOpaque(retained).release()
             Log.hotkey.error("CGEvent.tapCreate returned nil — check Accessibility + Input Monitoring")
             return false
@@ -133,12 +135,6 @@ final class HotkeyMonitor {
         CFRunLoopAddSource(CFRunLoopGetMain(), src, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
 
-        // R4-F31: seed `rightOptDown` from the **physical** key state so
-        // we survive "user is already holding Right Option when the app
-        // launches." Without this the first event we observe is the
-        // release, which the toggle reads as "now down" → arm → 200ms
-        // later commit → the app starts recording at launch with no
-        // user intent.
         self.rightOptDown = CGEventSource.keyState(
             .combinedSessionState, key: CGKeyCode(Self.rightOptKeycode))
         Log.hotkey.log(
@@ -146,8 +142,6 @@ final class HotkeyMonitor {
         return true
     }
 
-    /// Tears down the tap explicitly (otherwise `deinit` does it). Safe to
-    /// call multiple times.
     func stop() {
         if let tap {
             CGEvent.tapEnable(tap: tap, enable: false)
@@ -168,9 +162,6 @@ final class HotkeyMonitor {
     /// C-callable trampoline. Re-enables the tap if the OS disabled it,
     /// then hops to main and dispatches into instance methods.
     private static let callback: CGEventTapCallBack = { _, type, event, ctx in
-        // Re-enable on disable per Apple docs and SO/47265452. Without
-        // this, a slow callback or system kill switch silently kills the
-        // tap.
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let ctx {
                 let me = Unmanaged<HotkeyMonitor>.fromOpaque(ctx).takeUnretainedValue()
@@ -187,9 +178,15 @@ final class HotkeyMonitor {
         guard let ctx else { return Unmanaged.passUnretained(event) }
         let me = Unmanaged<HotkeyMonitor>.fromOpaque(ctx).takeUnretainedValue()
 
-        // Snapshot fields off the C-thread event before dispatching.
         let keycode = event.getIntegerValueField(.keyboardEventKeycode)
         let flags = event.flags
+
+        // L1: trace every callback fire.
+        // We are off the main thread here (Mach port). The Trace.tap call
+        // hops through `Log.trace.debug` which is itself thread-safe, but
+        // we do NOT call into instance-isolated state from here.
+        Trace.tap("callback",
+                  "type=\(type.rawValue) keycode=\(keycode) flagsRaw=\(String(flags.rawValue, radix: 16))")
 
         DispatchQueue.main.async {
             me.handleOnMain(type: type, keycode: keycode, flags: flags)
@@ -200,19 +197,26 @@ final class HotkeyMonitor {
     // MARK: Main-thread state machine
 
     private func handleOnMain(type: CGEventType, keycode: Int64, flags: CGEventFlags) {
+        // L2: keycode match decision.
+        // R6: gate the trace to relevant cases only — do NOT fire on every
+        // key the OS receives. Without this guard, holding a key while
+        // typing produces a firehose that buries the signal.
+        let isRightOpt = (keycode == Self.rightOptKeycode)
+        let armedActive = rightOptDown && armed && !committed
+        if isRightOpt || armedActive {
+            Trace.hk("keycode-match",
+                     "keycode=\(keycode) isRightOpt=\(isRightOpt) type=\(type.rawValue) armedActive=\(armedActive)")
+        }
+
         switch type {
         case .flagsChanged:
-            if keycode == Self.rightOptKeycode {
+            if isRightOpt {
                 handleRightOptionToggle(flags: flags)
             } else if rightOptDown && armed && !committed {
-                // F23: any non-Right-Option modifier change while armed
-                // means the user is composing a shortcut. Cancel.
                 cancelArming(reason: "modifier change during qualify window")
             }
 
         case .keyDown:
-            // Any real key press while armed but before commit means the
-            // user is composing a shortcut, not dictating.
             if rightOptDown, armed, !committed {
                 cancelArming(reason: "keyDown during qualify window")
             }
@@ -226,44 +230,47 @@ final class HotkeyMonitor {
     /// rather than `.maskAlternate` (which is left|right OR'd and can't
     /// disambiguate when both Options are held).
     private func handleRightOptionToggle(flags: CGEventFlags) {
+        let prev = rightOptDown
         if rightOptDown {
             // Was down → now up.
             rightOptDown = false
+            Trace.hk("toggle", "prev=true next=false")
             armWork?.cancel()
             armWork = nil
             let wasCommitted = committed
             let wasArmed = armed
             armed = false
             committed = false
-            // Only deliver onRelease if we actually committed (i.e.,
-            // recording was started). Otherwise the release is silent —
-            // a brief tap or a cancelled arm.
             if wasCommitted {
                 onRelease()
             } else if wasArmed {
-                // Arm fired but we never committed (released inside the
-                // qualify window). Tell the delegate we're idle again.
                 onCancel()
             }
-            _ = flags // unused; sanity-check could assert .maskAlternate cleared
+            _ = flags
         } else {
             // Was up → now down.
             rightOptDown = true
-            // F6: don't even arm if a disqualifying modifier is already
-            // held when right-option goes down.
+            Trace.hk("toggle", "prev=false next=true")
             if !flags.intersection(Self.disqualifyingMods).isEmpty {
                 Log.hotkey.log("skip arm: disqualifying modifier held with right-option")
                 return
             }
             armed = true
             committed = false
+            // L4: deliver onArm to AppDelegate.
+            Trace.hk("onarm", "armed=true prev=\(prev)")
             onArm()
 
             let work = DispatchWorkItem { [weak self] in
                 guard let self else { return }
-                guard self.rightOptDown, self.armed, !self.committed else { return }
+                guard self.rightOptDown, self.armed, !self.committed else {
+                    Trace.hk("commit-skip",
+                             "rightOptDown=\(self.rightOptDown) armed=\(self.armed) committed=\(self.committed)")
+                    return
+                }
                 self.committed = true
                 Log.hotkey.log("commit: held past qualify window")
+                Trace.hk("oncommit", "committed=true")
                 self.onCommit()
             }
             armWork = work
@@ -278,6 +285,7 @@ final class HotkeyMonitor {
         armWork = nil
         armed = false
         Log.hotkey.log("cancel: \(reason, privacy: .public)")
+        Trace.hk("cancel", "reason=\(reason)")
         onCancel()
     }
 }

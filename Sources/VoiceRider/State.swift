@@ -41,4 +41,21 @@ enum AppState: Equatable {
     /// Something failed. The associated value is shown as a tooltip on the
     /// menu-bar icon. The state auto-clears to `.idle` after 2 seconds.
     case error(String)
+
+    /// Stable, short, log-safe tag for the case. Used by `Trace.state(...)`
+    /// so trace lines never include the user-visible error message
+    /// (which may contain PII like file paths or HTTP error bodies).
+    ///
+    /// The tag is stable across releases — tests in `StateTests` pin
+    /// these values.
+    var tag: String {
+        switch self {
+        case .idle:         return "idle"
+        case .arming:       return "arm"
+        case .recording:    return "rec"
+        case .transcribing: return "tx"
+        case .pasting:      return "paste"
+        case .error:        return "err"
+        }
+    }
 }

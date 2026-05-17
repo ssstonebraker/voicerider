@@ -18,6 +18,16 @@ import os
 /// developer-controlled constants are safe to mark `.public`. File system
 /// paths often include the user's short username (`/var/folders/.../`)
 /// and should be `.private`.
+///
+/// ### `trace` category
+///
+/// `Log.trace` is the diagnostic firehose used by the press → overlay
+/// chain instrumentation. It is **only** emitted via the `Trace` enum
+/// in `Trace.swift` (single ingress point — Sauron rule). Filter with:
+///
+///     log show --predicate 'subsystem == "com.voicerider" AND category == "trace"'
+///
+/// or use the helper `./scripts/show-voicerider-trace.sh`.
 enum Log {
     static let app        = Logger(subsystem: "com.voicerider", category: "app")
     static let hotkey     = Logger(subsystem: "com.voicerider", category: "hotkey")
@@ -25,4 +35,5 @@ enum Log {
     static let transcribe = Logger(subsystem: "com.voicerider", category: "transcribe")
     static let paste      = Logger(subsystem: "com.voicerider", category: "paste")
     static let perms      = Logger(subsystem: "com.voicerider", category: "perms")
+    static let trace      = Logger(subsystem: "com.voicerider", category: "trace")
 }

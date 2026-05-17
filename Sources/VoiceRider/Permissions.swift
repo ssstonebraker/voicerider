@@ -17,11 +17,23 @@ import IOKit.hid
 /// granted?" Other modules consult `Permissions` rather than calling
 /// `AVCaptureDevice.authorizationStatus` / `AXIsProcessTrusted` /
 /// `IOHIDCheckAccess` directly.
+///
+/// ### R2 — request vs query
+///
+/// Two flavours per service:
+///
+///   - `request*()` — may trigger a system prompt the first time
+///     (calls `IOHIDRequestAccess`, `AVCaptureDevice.requestAccess`,
+///     or passes `prompt: true` to `AXIsProcessTrustedWithOptions`).
+///   - `*Status()` — query-only, never prompts. Safe to call on every
+///     status-menu render.
+///
+/// `PermissionsSnapshot.current(perms:)` uses ONLY the `*Status()`
+/// flavour so re-rendering the menu does not nudge the user into a
+/// prompt loop.
 final class Permissions: MicrophoneStatusProviding {
 
-    /// Triggers the standard mic prompt. Result is delivered asynchronously
-    /// to the system-managed handler; we re-check on each record attempt
-    /// via `microphoneStatus()`.
+    /// Triggers the standard mic prompt. Result is delivered asynchronously.
     func requestMicrophone() {
         AVCaptureDevice.requestAccess(for: .audio) { granted in
             Log.perms.log("mic granted=\(granted, privacy: .public)")
@@ -53,6 +65,13 @@ final class Permissions: MicrophoneStatusProviding {
         let access = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
         Log.perms.log("input-monitoring access=\(access.rawValue, privacy: .public)")
         return access
+    }
+
+    /// R2: query-only path. Does NOT call `IOHIDRequestAccess` (which
+    /// can prompt). Safe to invoke from a status-menu render every time
+    /// the menu opens.
+    func inputMonitoringStatus() -> IOHIDAccessType {
+        IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
     }
 
     /// Opens the three relevant System Settings panes so the user can grant
