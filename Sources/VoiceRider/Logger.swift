@@ -5,8 +5,7 @@ import os
 /// module so `log show --predicate 'subsystem == "com.voicerider"'` filters
 /// the whole app at once.
 ///
-/// Steering rule: never use `print(...)` for runtime logging — see
-/// `.kiro/steering/swift-coding-best-practices.md` §14.
+/// Steering rule: never use `print(...)` for runtime logging.
 ///
 /// Privacy rule: do **not** log user content with `privacy: .public`.
 /// Specifically, **never** log:

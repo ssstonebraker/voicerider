@@ -2,8 +2,8 @@ import Foundation
 
 /// The complete user-visible state of VoiceRider.
 ///
-/// One value of this type is the single source of truth (Sauron rule, see
-/// `.kiro/steering/no-orphans-no-dual-paths.md`). No subsystem may track
+/// One value of this type is the single source of truth (Sauron rule:
+/// no parallel state). No subsystem may track
 /// "am I recording?" with its own Bool — they read this enum.
 ///
 /// ```
