@@ -59,9 +59,21 @@ fi
 echo
 echo "==> Assembling $APP"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/VoiceRider"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+
+# Copy bundled assets. Each is regenerated from SVG sources by
+# scripts/render-resources.sh; both committed as binary artifacts so
+# fresh clones work without librsvg installed.
+for asset in AppIcon.icns RecordingOverlay.pdf; do
+  if [ -f "Resources/$asset" ]; then
+    cp "Resources/$asset" "$APP/Contents/Resources/"
+  else
+    echo "✘ Missing Resources/$asset (run ./scripts/render-resources.sh)" >&2
+    exit 1
+  fi
+done
 
 # 4. Ad-hoc codesign with the canonical bundle id. TCC pins permissions
 # to bundle id + signature + path; keeping --identifier stable across

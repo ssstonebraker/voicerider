@@ -29,11 +29,13 @@ Resources/Info.plist: Resources/Info.plist.template scripts/render-info-plist.sh
 	./scripts/render-info-plist.sh
 
 # F14: dropped `--deep`. Single Mach-O bundle has no nested signed code.
-$(APP): $(BIN) Resources/Info.plist
+$(APP): $(BIN) Resources/Info.plist Resources/AppIcon.icns Resources/RecordingOverlay.pdf
 	rm -rf $(APP)
-	mkdir -p $(BUNDLE)/MacOS
+	mkdir -p $(BUNDLE)/MacOS $(BUNDLE)/Resources
 	cp $(BIN) $(BUNDLE)/MacOS/VoiceRider
 	cp Resources/Info.plist $(BUNDLE)/Info.plist
+	cp Resources/AppIcon.icns $(BUNDLE)/Resources/
+	cp Resources/RecordingOverlay.pdf $(BUNDLE)/Resources/
 	codesign --force --sign - --identifier $(IDENTIFIER) $(APP)
 	@echo
 	@echo "Built $(APP) (identifier: $(IDENTIFIER))"

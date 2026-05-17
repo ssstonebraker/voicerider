@@ -38,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var recorder = AudioRecorder(mic: perms)
     private let paster = Paster()
     private lazy var status: StatusItemController = StatusItemController()
+    private lazy var overlay: RecordingOverlay = RecordingOverlay()
     private var transcriber: Transcriber?
 
     // F8: was `var hotkey: HotkeyMonitor!`. Now a real Optional that
@@ -50,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var state: AppState = .idle {
         didSet {
             status.render(state)
+            overlay.render(state)
             Log.app.log("state -> \(String(describing: self.state), privacy: .public)")
         }
     }

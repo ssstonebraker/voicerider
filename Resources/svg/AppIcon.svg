@@ -1,0 +1,67 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <title>VoiceRider</title>
+  <defs>
+    <clipPath id="icon-clip">
+      <rect x="0" y="0" width="1024" height="1024" rx="200"/>
+    </clipPath>
+    <linearGradient id="bg-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1c2a4a"/>
+      <stop offset="100%" stop-color="#0d1520"/>
+    </linearGradient>
+    <linearGradient id="mic-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#c8d6ef"/>
+    </linearGradient>
+    <linearGradient id="accent-grad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4f8ef7"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+  </defs>
+
+  <g clip-path="url(#icon-clip)">
+    <rect width="1024" height="1024" fill="url(#bg-grad)"/>
+
+    <circle cx="240" cy="240" r="300" fill="#2a3f6a" opacity="0.3"/>
+    <circle cx="800" cy="820" r="250" fill="#1e3566" opacity="0.25"/>
+
+    <!-- Mic capsule -->
+    <rect x="432" y="180" width="160" height="320" rx="80" fill="url(#mic-grad)"/>
+
+    <!-- Capsule sheen -->
+    <rect x="448" y="196" width="48" height="288" rx="24" fill="#ffffff" opacity="0.12"/>
+
+    <!-- Grille lines -->
+    <rect x="464" y="252" width="16" height="56" rx="8" fill="#a0b4d8" opacity="0.6"/>
+    <rect x="464" y="336" width="16" height="56" rx="8" fill="#a0b4d8" opacity="0.5"/>
+    <rect x="464" y="420" width="16" height="38" rx="8" fill="#a0b4d8" opacity="0.4"/>
+
+    <!-- Stand arc -->
+    <path d="M356 524 Q356 648 512 648 Q668 648 668 524" fill="none" stroke="url(#mic-grad)" stroke-width="26" stroke-linecap="round"/>
+
+    <!-- Stand post -->
+    <line x1="512" y1="648" x2="512" y2="760" stroke="url(#mic-grad)" stroke-width="26" stroke-linecap="round"/>
+
+    <!-- Stand base -->
+    <line x1="428" y1="760" x2="596" y2="760" stroke="url(#mic-grad)" stroke-width="26" stroke-linecap="round"/>
+
+    <!-- Bottom bar -->
+    <rect x="0" y="820" width="1024" height="204" fill="#0a0f1e" opacity="0.55"/>
+    <rect x="0" y="816" width="1024" height="5" fill="url(#accent-grad)" opacity="0.9"/>
+
+    <!-- Wordmark -->
+    <text x="512" y="906"
+      font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+      font-size="56"
+      font-weight="600"
+      fill="#ffffff"
+      letter-spacing="12"
+      text-anchor="middle">VOICERIDER</text>
+
+    <!-- Border -->
+    <rect x="0" y="0" width="1024" height="1024" rx="200"
+      fill="none"
+      stroke="#4a6fa5"
+      stroke-width="2"
+      opacity="0.4"/>
+  </g>
+</svg>
