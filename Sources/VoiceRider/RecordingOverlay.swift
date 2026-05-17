@@ -196,10 +196,13 @@ final class RecordingOverlay {
         Trace.d("4-frame-clamp",
                 "raw=\(rectString(raw)) visible=\(rectString(visible)) clamped=\(rectString(clamped))")
 
-        // D3: simpler style mask
+        // D3 reverted: .nonactivatingPanel is REQUIRED for LSUIElement apps.
+        // Without it, orderFrontRegardless triggers a silent app-activation
+        // attempt that fails (the app has no activation policy), and the
+        // window's alpha=1 but it's not visible to the user.
         let panel = NSPanel(
             contentRect: clamped,
-            styleMask: [.borderless],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false)
         // D2: popUpMenu instead of screenSaver
