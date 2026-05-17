@@ -23,6 +23,11 @@ all: $(APP)
 $(BIN): $(SWIFT_FILES) Package.swift
 	swift build -c release
 
+# Render Resources/Info.plist from the template using $VOICERIDER_LAN_HOST
+# (or the value in .env.local). Gitignored so your LAN host doesn't leak.
+Resources/Info.plist: Resources/Info.plist.template scripts/render-info-plist.sh .env.local.example
+	./scripts/render-info-plist.sh
+
 # F14: dropped `--deep`. Single Mach-O bundle has no nested signed code.
 $(APP): $(BIN) Resources/Info.plist
 	rm -rf $(APP)

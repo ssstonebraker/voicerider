@@ -13,7 +13,7 @@ import Foundation
 extension TranscriberTests {
 
     private static let httpEndpoint =
-        URL(string: "http://linux:8000/v1/audio/transcriptions")!
+        URL(string: "http://example.test/v1/audio/transcriptions")!
 
     private static let wavBytes: [UInt8] = [
         // Tiny RIFF/WAVE fixture: 4-byte 'RIFF' magic plus a marker byte.

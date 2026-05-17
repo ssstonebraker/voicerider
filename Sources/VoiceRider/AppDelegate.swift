@@ -17,7 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let bearer: String
 
         static let defaultEndpoint =
-            URL(string: "http://linux:8000/v1/audio/transcriptions")!
+            URL(string: "http://localhost:8000/v1/audio/transcriptions")!
         static let defaultModel = "canary-qwen-2.5b"
         static let defaultBearer = "local-no-auth"
 

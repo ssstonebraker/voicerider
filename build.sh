@@ -31,6 +31,9 @@ case "${1:-all}" in
     ;;
 
   all|"")
+    echo "==> Rendering Resources/Info.plist"
+    ./scripts/render-info-plist.sh
+    echo
     echo "==> Debug build"
     swift build
     echo

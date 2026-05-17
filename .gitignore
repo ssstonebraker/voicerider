@@ -76,6 +76,7 @@ Temporary Items
 .env
 .env.*
 !.env.example
+!.env.local.example
 *.pem
 *.key
 *.p12
@@ -100,3 +101,10 @@ coverage/
 
 # Internal steering / planning docs (not part of the public release)
 .kiro/
+
+# Generated at build time from Resources/Info.plist.template by
+# build.sh / prod-build.sh / Makefile, using $VOICERIDER_LAN_HOST.
+Resources/Info.plist
+
+# Local environment override (set VOICERIDER_LAN_HOST etc.)
+.env.local

@@ -10,7 +10,7 @@ import Foundation
 struct TranscriberTests {
 
     private static let endpoint =
-        URL(string: "http://linux:8000/v1/audio/transcriptions")!
+        URL(string: "http://example.test/v1/audio/transcriptions")!
 
     // MARK: Pure multipart builder
 

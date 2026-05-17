@@ -173,10 +173,49 @@ into the multipart `model` part.
 > token, accept that any process running as your user can read it. A
 > Keychain backend is tracked for v0.2.
 
-If you change the host name, you also need to update the
-`NSExceptionDomains` entry in `Resources/Info.plist` and rebuild — App
-Transport Security blocks plain HTTP otherwise. See
-[troubleshooting](#troubleshooting) for the IP-with-CIDR workaround.
+If you change the host name, you also need to make sure your `Info.plist`'s
+`NSExceptionDomains` entry matches — App Transport Security blocks
+plain HTTP otherwise. See the next section.
+
+## Local config (don't commit your LAN host)
+
+`Resources/Info.plist` is **generated at build time** from
+`Resources/Info.plist.template`, so you can keep your real LAN
+hostname or IP in the Info.plist on disk without it leaking into
+commits.
+
+Quick-start:
+
+```bash
+cp .env.local.example .env.local
+$EDITOR .env.local                # set VOICERIDER_LAN_HOST
+./prod-build.sh --install         # the build renders Info.plist for you
+```
+
+How it resolves:
+
+1. Default value if nothing is set: `localhost`.
+2. `.env.local` (gitignored) is sourced for `VOICERIDER_LAN_HOST` if
+   it exists.
+3. `VOICERIDER_LAN_HOST=foo ./prod-build.sh` overrides everything else
+   for that one build.
+
+The generated `Resources/Info.plist` is gitignored. Only the template
+and your `.env.local.example` are tracked. To verify your local host
+isn't in the index:
+
+```bash
+git status                  # Info.plist should NOT appear
+git check-ignore -v Resources/Info.plist .env.local
+```
+
+If you also need a non-default hostname for the runtime URL, set the
+`UserDefault` (orthogonal to the Info.plist generation):
+
+```bash
+defaults write com.voicerider voicerider.serverURL \
+    "http://my-asr-host:8000/v1/audio/transcriptions"
+```
 
 ## Server protocol
 
@@ -413,7 +452,7 @@ in `Resources/Info.plist` still names the old host. Either:
 ```xml
 <key>NSExceptionDomains</key>
 <dict>
-    <key>192.168.1.42/32</key>
+    <key>192.0.2.42/32</key>
     <dict>
         <key>NSExceptionAllowsInsecureHTTPLoads</key><true/>
     </dict>

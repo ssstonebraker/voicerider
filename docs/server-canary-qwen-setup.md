@@ -291,7 +291,7 @@ sudo ufw status
 
 # this machine's LAN IP
 hostname -I | awk '{print $1}'
-# e.g. 192.168.1.42 — note this for the VoiceRider config
+# e.g. 192.0.2.42 — note this for the VoiceRider config
 ```
 
 ## 10. Point VoiceRider at your server
@@ -299,7 +299,7 @@ hostname -I | awk '{print $1}'
 On the Mac:
 
 ```bash
-defaults write com.voicerider voicerider.serverURL  "http://192.168.1.42:8000/v1/audio/transcriptions"
+defaults write com.voicerider voicerider.serverURL  "http://192.0.2.42:8000/v1/audio/transcriptions"
 defaults write com.voicerider voicerider.modelName  "canary-qwen-2.5b"
 defaults write com.voicerider voicerider.bearerToken "local-no-auth"   # ignored by this server
 ```
@@ -322,7 +322,7 @@ your LAN host. Either name the host (and add it to `/etc/hosts`):
 ```xml
 <key>NSExceptionDomains</key>
 <dict>
-    <key>192.168.1.42/32</key>
+    <key>192.0.2.42/32</key>
     <dict>
         <key>NSExceptionAllowsInsecureHTTPLoads</key><true/>
     </dict>

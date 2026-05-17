@@ -30,6 +30,11 @@ for arg in "$@"; do
   esac
 done
 
+# 0. Render Resources/Info.plist from the template + .env.local
+#    (gitignored so your LAN host doesn't leak into commits).
+echo "==> Rendering Resources/Info.plist"
+./scripts/render-info-plist.sh
+
 # 1. Release build with zero-warning gate.
 echo "==> Release build"
 LOG=$(mktemp)

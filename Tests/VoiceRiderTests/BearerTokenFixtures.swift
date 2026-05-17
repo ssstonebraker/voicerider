@@ -227,7 +227,7 @@ struct BearerTokenFixtures {
 
     @Test("Transcriber.init accepts both default values")
     func initAcceptsDefaults() throws {
-        let endpoint = URL(string: "http://linux:8000/v1/audio/transcriptions")!
+        let endpoint = URL(string: "http://example.test/v1/audio/transcriptions")!
         _ = try Transcriber(endpoint: endpoint,
                             model: "canary-qwen-2.5b",
                             bearer: "local-no-auth")
