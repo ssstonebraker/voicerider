@@ -18,6 +18,9 @@ final class StatusItemController {
     private let traceItem = NSMenuItem(title: "Show Live Trace…",
                                        action: #selector(traceAction),
                                        keyEquivalent: "")
+    private let settingsItem = NSMenuItem(title: "Settings…",
+                                           action: #selector(settingsAction),
+                                           keyEquivalent: ",")
     private let openPermsItem = NSMenuItem(title: "Open Permission Settings…",
                                            action: #selector(permsAction),
                                            keyEquivalent: "")
@@ -40,11 +43,15 @@ final class StatusItemController {
     /// Invoked when the user picks "Show Live Trace…".
     var onShowTrace: () -> Void = {}
 
+    /// Invoked when the user picks "Settings…".
+    var onOpenSettings: () -> Void = {}
+
     init(perms: Permissions) {
         self.perms = perms
 
         recheckItem.target = self
         traceItem.target = self
+        settingsItem.target = self
         openPermsItem.target = self
         quitItem.target = self
 
@@ -53,6 +60,7 @@ final class StatusItemController {
         menu.addItem(permsRoot)
         menu.addItem(recheckItem)
         menu.addItem(.separator())
+        menu.addItem(settingsItem)
         menu.addItem(traceItem)
         menu.addItem(openPermsItem)
         menu.addItem(.separator())
@@ -141,6 +149,10 @@ final class StatusItemController {
     }
 
     @objc private func traceAction()  { onShowTrace() }
+    @objc private func settingsAction() {
+        Trace.settings("open", "")
+        onOpenSettings()
+    }
     @objc private func permsAction()  { onOpenPermissions() }
     @objc private func quitAction()   { onQuit() }
 }

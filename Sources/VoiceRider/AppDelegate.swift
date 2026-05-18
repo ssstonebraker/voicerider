@@ -24,29 +24,6 @@ import CommonCrypto
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
-    // MARK: Configuration (UserDefaults-overridable)
-
-    private struct Config {
-        let endpoint: URL
-        let model: String
-        let bearer: String
-
-        static let defaultEndpoint =
-            URL(string: "http://localhost:8000/v1/audio/transcriptions")!
-        static let defaultModel = "canary-qwen-2.5b"
-        static let defaultBearer = "local-no-auth"
-
-        static func load() -> Config {
-            let defaults = UserDefaults.standard
-            let endpoint = defaults.string(forKey: "voicerider.serverURL")
-                .flatMap { URL(string: $0) }
-                ?? defaultEndpoint
-            let model = defaults.string(forKey: "voicerider.modelName")  ?? defaultModel
-            let bearer = defaults.string(forKey: "voicerider.bearerToken") ?? defaultBearer
-            return Config(endpoint: endpoint, model: model, bearer: bearer)
-        }
-    }
-
     // MARK: Subsystems
 
     private let perms = Permissions()
@@ -55,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var status: StatusItemController = StatusItemController(perms: perms)
     private lazy var overlay: RecordingOverlay = RecordingOverlay()
     private var transcriber: Transcriber?
+    private var settingsWC: SettingsWindowController?
 
     private var hotkey: HotkeyMonitor?
 
@@ -83,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         status.onShowTrace = { [weak self] in
             self?.openConsoleAppFiltered()  // diagnostic helper
         }
+        status.onOpenSettings = { [weak self] in self?.openSettings() }
 
         perms.requestMicrophone()
         perms.requestAccessibility(prompt: true)
@@ -94,7 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Initial permission render so the menu shows ✓/✗ from launch.
         status.refreshPermissions()
 
-        let cfg = Config.load()
+        let cfg = ServerConfig.load()
         do {
             transcriber = try Transcriber(
                 endpoint: cfg.endpoint,
@@ -195,6 +174,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         errorClearWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
+    }
+
+    // MARK: Settings window
+
+    /// Opens (or re-fronts) the single settings window. The window
+    /// is owned here, not on `StatusItemController`, because saving
+    /// triggers a Transcriber rebuild which is also AppDelegate's
+    /// responsibility — keeping ownership in one place avoids a
+    /// back-channel from the menu to persistence.
+    func openSettings() {
+        if let existing = settingsWC {
+            existing.show()
+            return
+        }
+        let wc = SettingsWindowController(initial: ServerConfig.load())
+        wc.onSave = { [weak self] cfg in self?.applyConfig(cfg) }
+        wc.onClosed = { [weak self] in self?.settingsWC = nil }
+        settingsWC = wc
+        wc.show()
+    }
+
+    /// Applies a freshly-saved `ServerConfig` by rebuilding the
+    /// Transcriber. Already-dispatched `transcribe()` calls in flight
+    /// hold their own strong reference to the **old** transcriber via
+    /// the URLSession completion closure (see C8), so changing
+    /// `self.transcriber` here doesn't affect them — the rebuild only
+    /// affects the *next* dictation.
+    private func applyConfig(_ cfg: ServerConfig) {
+        do {
+            self.transcriber = try Transcriber(
+                endpoint: cfg.endpoint,
+                model: cfg.model,
+                bearer: cfg.bearer)
+            Trace.settings("rebuild", "result=ok")
+        } catch {
+            Trace.settings("rebuild", "result=err")
+            setError("config: \(error.localizedDescription)")
+        }
     }
 
     // MARK: P3 — cdhash detection

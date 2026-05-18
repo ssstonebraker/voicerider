@@ -107,45 +107,152 @@ final class Transcriber {
 
         Log.transcribe.log("POST \(self.endpoint.absoluteString, privacy: .public)")
         let task = session.dataTask(with: request) { data, response, err in
-            if let err {
-                Log.transcribe.error("request failed: \(err.localizedDescription, privacy: .public)")
-                completion(.failure(.requestFailed(message: err.localizedDescription)))
-                return
+            let result = Self.parseResponse(data: data, response: response, error: err)
+            if case .failure(let e) = result {
+                Log.transcribe.error("transcribe: \(String(describing: e), privacy: .public)")
             }
-            guard let http = response as? HTTPURLResponse else {
-                completion(.failure(.requestFailed(message: "no HTTP response")))
-                return
-            }
-            guard (200..<300).contains(http.statusCode) else {
-                let body = data.flatMap { String(data: $0, encoding: .utf8) }
-                Log.transcribe.error("http \(http.statusCode, privacy: .public)")
-                completion(.failure(.http(status: http.statusCode, body: body)))
-                return
-            }
-            guard let data else {
-                completion(.failure(.empty))
-                return
-            }
-            do {
-                let decoded = try JSONDecoder().decode(Response.self, from: data)
-                let trimmed = decoded.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.isEmpty {
-                    completion(.failure(.empty))
-                } else {
-                    completion(.success(trimmed))
-                }
-            } catch {
-                completion(.failure(.decode(message: error.localizedDescription)))
-            }
+            completion(result)
         }
         task.resume()
     }
 
+    /// Probes the configured endpoint with a 0.5 s silent WAV (no
+    /// disk I/O). Result shape is identical to `transcribe(wav:)` —
+    /// `Result<String, TranscribeError>`. The probe does NOT
+    /// special-case empty-text-as-success; that interpretation is UI
+    /// policy and lives in `SettingsWindowController.renderResult`.
+    /// Probe success here means HTTP 2xx + JSON parses to `Response`
+    /// with non-empty trimmed `text`. Empty text surfaces as
+    /// `TranscribeError.empty` exactly like dictation.
+    ///
+    /// Returns the in-flight `URLSessionDataTask?` so the caller can
+    /// `cancel()` on window close. Returns `nil` only if request
+    /// construction itself fails (unreachable in practice — `init`
+    /// already validated model/bearer).
+    ///
+    /// On `URLError.cancelled`, completion is **suppressed**: the
+    /// closure simply returns without invoking `completion`. The
+    /// caller treats cancellation as "no signal", which the settings
+    /// window does naturally because it cancels in `windowWillClose`.
+    @discardableResult
+    func probe(timeout: TimeInterval = 15,
+               completion: @escaping @Sendable (Result<String, TranscribeError>) -> Void)
+        -> URLSessionDataTask?
+    {
+        let wavBytes = SilentWAVGenerator.makeWAV(seconds: 0.5)
+        let request: URLRequest
+        do {
+            request = try buildRequest(wavData: wavBytes,
+                                       filename: "probe.wav",
+                                       timeout: timeout)
+        } catch let e as TranscribeError {
+            completion(.failure(e))
+            return nil
+        } catch {
+            completion(.failure(.requestFailed(message: error.localizedDescription)))
+            return nil
+        }
+
+        Log.transcribe.log("PROBE \(self.endpoint.absoluteString, privacy: .public)")
+        let task = session.dataTask(with: request) { data, response, err in
+            // C19: suppress completion on user-initiated cancel.
+            if let urlErr = err as? URLError, urlErr.code == .cancelled {
+                return
+            }
+            let result = Self.parseResponse(data: data, response: response, error: err)
+            if case .failure(let e) = result {
+                Log.transcribe.error("probe: \(String(describing: e), privacy: .public)")
+            }
+            completion(result)
+        }
+        task.resume()
+        return task
+    }
+
+    /// Returns the failing host name iff `error` is a URLError with
+    /// code `.appTransportSecurityRequiresSecureConnection` (-1022).
+    /// Used by the settings window to surface a precise ATS message
+    /// pointing at `Resources/Info.plist.template`.
+    static func atsBlockedHost(in error: Error) -> String? {
+        guard let urlErr = error as? URLError else { return nil }
+        // `URLError.Code.appTransportSecurityRequiresSecureConnection`
+        // is -1022. We compare on rawValue rather than the enum case
+        // because the case name has shifted across SDK versions.
+        guard urlErr.code.rawValue == -1022 else { return nil }
+        return urlErr.failureURLString.flatMap { URL(string: $0)?.host }
+            ?? (urlErr.userInfo[NSURLErrorFailingURLErrorKey] as? URL)?.host
+    }
+
+    // MARK: Shared response parser
+
+    /// Pure decoder of `(data, response, error)` into the canonical
+    /// `Result<String, TranscribeError>`. Both `transcribe` and
+    /// `probe` route through this. Single response-parsing path —
+    /// Sauron compliant.
+    ///
+    /// On `URLError` code -1022 (App Transport Security blocked the
+    /// connection), the message is enriched with the failing host
+    /// name via `Transcriber.atsBlockedHost(in:)`. Callers that
+    /// surface the message to a UI (the settings window) detect ATS
+    /// by substring, which is reliable because Foundation localises
+    /// "App Transport Security" into the same prefix on every locale
+    /// VoiceRider supports (English-only as of v0.1.x).
+    static func parseResponse(data: Data?, response: URLResponse?, error: Error?)
+        -> Result<String, TranscribeError>
+    {
+        if let error {
+            if let host = Self.atsBlockedHost(in: error) {
+                return .failure(.requestFailed(
+                    message: "App Transport Security blocked the connection to \(host). \(error.localizedDescription)"))
+            }
+            return .failure(.requestFailed(message: error.localizedDescription))
+        }
+        guard let http = response as? HTTPURLResponse else {
+            return .failure(.requestFailed(message: "no HTTP response"))
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let body = data.flatMap { String(data: $0, encoding: .utf8) }
+            return .failure(.http(status: http.statusCode, body: body))
+        }
+        guard let data else {
+            return .failure(.empty)
+        }
+        do {
+            let decoded = try JSONDecoder().decode(Response.self, from: data)
+            let trimmed = decoded.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                return .failure(.empty)
+            }
+            return .success(trimmed)
+        } catch {
+            return .failure(.decode(message: error.localizedDescription))
+        }
+    }
+
     // MARK: Multipart
 
-    /// Builds the multipart/form-data request. `internal` so tests can
-    /// inspect the body without invoking the network path.
+    /// Builds the multipart/form-data request from a WAV file on disk.
+    /// `internal` so tests can inspect the body without invoking the
+    /// network path. Reads the file then delegates to the Data form.
     func buildRequest(wavURL: URL) throws -> URLRequest {
+        let wavData: Data
+        do {
+            wavData = try Data(contentsOf: wavURL)
+        } catch {
+            throw TranscribeError.requestFailed(message: error.localizedDescription)
+        }
+        return try buildRequest(wavData: wavData,
+                                filename: wavURL.lastPathComponent,
+                                timeout: timeout)
+    }
+
+    /// Builds the multipart/form-data request from in-memory bytes.
+    /// Used by `probe()` (silent WAV, no disk) and indirectly by
+    /// `buildRequest(wavURL:)` after reading the file. Single
+    /// multipart-construction path — Sauron compliant.
+    func buildRequest(wavData: Data,
+                      filename: String,
+                      timeout: TimeInterval) throws -> URLRequest {
         var req = URLRequest(url: endpoint, timeoutInterval: timeout)
         req.httpMethod = "POST"
         req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
@@ -154,17 +261,10 @@ final class Transcriber {
         req.setValue("multipart/form-data; boundary=\(boundary)",
                      forHTTPHeaderField: "Content-Type")
 
-        let wavData: Data
-        do {
-            wavData = try Data(contentsOf: wavURL)
-        } catch {
-            throw TranscribeError.requestFailed(message: error.localizedDescription)
-        }
-
         req.httpBody = Self.multipartBody(boundary: boundary,
                                           model: model,
                                           wavData: wavData,
-                                          filename: wavURL.lastPathComponent)
+                                          filename: filename)
         return req
     }
 

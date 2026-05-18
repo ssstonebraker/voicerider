@@ -78,6 +78,12 @@ enum Trace {
         emit("trace:perms-\(event)", payload)
     }
 
+    // MARK: Settings window (S1–S17)
+
+    static func settings(_ event: String, _ payload: String) {
+        emit("trace:settings-\(event)", payload)
+    }
+
     // MARK: Underlying emit
 
     private static func emit(_ tag: String, _ payload: String) {

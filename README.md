@@ -145,6 +145,37 @@ the `Makefile`.
 
 ## Configuration
 
+VoiceRider can be configured two ways: a **Settings…** window from the
+menu-bar icon (since v0.1.x), or `defaults write` for power users. Both
+write to the same three `UserDefaults` keys, so a value set via either
+path is read by the next launch.
+
+### From the menu
+
+Click the menu-bar mic icon → **Settings…**. The window has three
+fields:
+
+- **Server URL** — the full `/v1/audio/transcriptions` endpoint.
+- **Model name** — the value sent in the multipart `model` part.
+- **Bearer token** — the `Authorization: Bearer …` value (entered
+  into a secure-text field; dots, not characters).
+
+A **Test Connection** button posts a 0.5-second silent WAV to the
+endpoint and reports the result inline (HTTP status, decode failure,
+ATS block, or "✓ silence accepted"). 15-second timeout to match
+dictation; the reference Canary-Qwen server's 30–90 s cold-start
+shows up here as a "timed out" message — a real dictation right
+after will succeed once the model is warm.
+
+**Save** persists to `UserDefaults` and rebuilds the in-memory
+Transcriber. **Cancel** (or Esc, or window-close) discards changes
+with a confirm sheet if anything is dirty.
+
+While the settings window is open VoiceRider briefly appears in
+Cmd-Tab and the Dock; it returns to menu-bar-only mode on close.
+
+### From the CLI
+
 VoiceRider reads three keys from `UserDefaults`:
 
 ```bash
