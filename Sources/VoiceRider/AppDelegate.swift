@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var overlay: RecordingOverlay = RecordingOverlay()
     private var transcriber: Transcriber?
     private var settingsWC: SettingsWindowController?
+    private var permissionsWC: PermissionsWindowController?
 
     private var hotkey: HotkeyMonitor?
 
@@ -54,7 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         status.onQuit = { NSApp.terminate(nil) }
-        status.onOpenPermissions = { [weak self] in self?.perms.openSettingsPanes() }
+        status.onOpenPermissions = { [weak self] in self?.openPermissionsWindow() }
         status.onRecheckPermissions = { [weak self] in
             self?.status.refreshPermissions()  // P2
         }
@@ -214,6 +215,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: Permissions window
+
+    /// Opens (or re-fronts) the single permissions-status window.
+    func openPermissionsWindow() {
+        if let existing = permissionsWC {
+            existing.show()
+            return
+        }
+        let wc = PermissionsWindowController(perms: perms)
+        wc.onClosed = { [weak self] in self?.permissionsWC = nil }
+        permissionsWC = wc
+        wc.show()
+    }
+
     // MARK: P3 — cdhash detection
 
     private func runCDHashCheck() {
@@ -274,7 +289,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let resp = alert.runModal()
         switch resp {
         case .alertFirstButtonReturn:
-            perms.openSettingsPanes()
+            openPermissionsWindow()
         case .alertSecondButtonReturn:
             // Pre-position Finder so the user can drag VoiceRider.app
             // into the Input Monitoring list, or right-click → Get Info.

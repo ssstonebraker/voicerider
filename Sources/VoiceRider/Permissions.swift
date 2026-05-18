@@ -90,21 +90,6 @@ final class Permissions: MicrophoneStatusProviding {
     func inputMonitoringStatus() -> IOHIDAccessType {
         IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
     }
-
-    /// Opens the three relevant System Settings panes so the user can grant
-    /// or revoke permissions.
-    func openSettingsPanes() {
-        let urls = [
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent",
-        ]
-        for s in urls {
-            if let url = URL(string: s) {
-                NSWorkspace.shared.open(url)
-            }
-        }
-    }
 }
 
 /// Test seam for mic-permission status. `AudioRecorder` depends on this
