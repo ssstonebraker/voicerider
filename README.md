@@ -5,27 +5,11 @@
 A native macOS push-to-talk dictation tool that lives in your menu bar. Pure
 Swift, zero-Electron, no cloud lock-in. Bring your own ASR server.
 
-```mermaid
-sequenceDiagram
-    actor User
-    participant Bar as Menu Bar
-    participant App as VoiceRider
-    participant Server as Your ASR Server
-    participant Focus as Focused App
-
-    User->>App: Hold Right Option
-    App->>Bar: 🎙 (arming)
-    Note over App: 200 ms qualification window
-    App->>Bar: 🎙 (recording)
-    User->>App: Speak
-    User->>App: Release Right Option
-    App->>Bar: ∿ (transcribing)
-    App->>Server: POST /v1/audio/transcriptions
-    Server-->>App: {"text": "..."}
-    App->>Bar: 📋 (pasting)
-    App->>Focus: synthesize Cmd+V
-    Focus-->>User: text appears at cursor
-    App->>Bar: 🎙 (idle)
+```
+┌─────────┐    ┌───────────┐    ┌─────────┐    ┌──────────┐    ┌───────────┐
+│  Hold   │───▶│  Speak    │───▶│ Release │───▶│ Server   │───▶│ Text at   │
+│ Right ⌥ │    │ (record)  │    │ Right ⌥ │    │ returns  │    │ cursor    │
+└─────────┘    └───────────┘    └─────────┘    └──────────┘    └───────────┘
 ```
 
 ## Why
@@ -42,8 +26,15 @@ upload, paste, restore clipboard — and gets out of your way.
   modifier or key while held, the press is treated as a regular shortcut
   and recording is cancelled.
 - **Bring your own ASR server:** any HTTP endpoint that accepts
-  `multipart/form-data` and returns `{"text": "..."}` works. See the
+  `multipart/form-data` and returns `{"text": "..."}` works. See
   [server protocol](#server-protocol) below.
+- **Settings window:** configure server URL, model name, and bearer token
+  from the menu bar. Includes a **Test Connection** button that verifies
+  the endpoint with a silent WAV.
+- **Permissions window:** live TCC grant state with plain-English
+  descriptions, deep-links to the exact System Settings pane, and
+  auto-close once all three are granted. Updates within ~200 ms of a
+  toggle in Settings.
 - **Clipboard-preserving paste:** your previous `.string` clipboard
   content is restored ~600 ms after paste-back. (See
   [limitations](#limitations) for what isn't preserved.)
@@ -78,6 +69,31 @@ In TextEdit, click into a new document, then:
 
 The text should appear at your cursor.
 
+## How it works
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Bar as Menu Bar
+    participant App as VoiceRider
+    participant Server as Your ASR Server
+    participant Focus as Focused App
+
+    User->>App: Hold Right Option
+    App->>Bar: 🎙 (arming)
+    Note over App: 200 ms qualification window
+    App->>Bar: 🎙 (recording)
+    User->>App: Speak
+    User->>App: Release Right Option
+    App->>Bar: ∿ (transcribing)
+    App->>Server: POST /v1/audio/transcriptions
+    Server-->>App: {"text": "..."}
+    App->>Bar: 📋 (pasting)
+    App->>Focus: synthesize Cmd+V
+    Focus-->>User: text appears at cursor
+    App->>Bar: 🎙 (idle)
+```
+
 ## State machine
 
 VoiceRider is one process with one `AppState` enum on the AppDelegate.
@@ -111,6 +127,8 @@ graph LR
     AD[AppDelegate<br/>AppState]
     PM[Permissions<br/>TCC + AX + IOHID]
     SI[StatusItemController<br/>NSStatusItem]
+    SW[SettingsWindow<br/>Server config]
+    PW[PermissionsWindow<br/>TCC status + deeplinks]
 
     HK -->|onArm/onCommit/onCancel/onRelease| AD
     AD -->|start, stop| AR
@@ -118,6 +136,8 @@ graph LR
     AD -->|paste| PA
     AD -->|render| SI
     AD --> PM
+    AD --> SW
+    AD --> PW
     AR --> TR
     TR --> PA
 ```
@@ -276,143 +296,26 @@ configuration assumes a LAN host (Apple's App Transport Security is
 configured for one named host in `Resources/Info.plist`; see
 [troubleshooting](#troubleshooting) for swapping in your own).
 
-## Reference server: Canary-Qwen 2.5B on Linux + RTX 4080
-
-VoiceRider was developed against a self-hosted [NVIDIA Canary-Qwen
-2.5B](https://huggingface.co/nvidia/canary-qwen-2.5b) running on a
-single Linux box on the LAN. As of mid-2025 Canary-Qwen-2.5B is the
-top-ranked open-source English ASR model on the [Hugging Face Open ASR
-Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard)
-(~5.6% WER) and runs in ~10–14 GB of VRAM at bf16, which fits on a
-single RTX 4080.
-
-> **This setup is illustrative, not prescriptive.** The reference
-> instructions below place all server data under a single base
-> directory referred to as `$ASR_ROOT` (e.g. `/srv/asr`,
-> `/opt/canary`, `/data/asr` — wherever you have ≥30 GB of fast
-> disk). Set `export ASR_ROOT=/your/path` once before following the
-> guide; every command below uses it. Your distro and hardware will
-> differ — anything that honors the [contract above](#server-protocol)
-> works — see [alternatives](#alternative-servers) below if you don't
-> want to run NeMo locally.
-
-### What you need
-
-- **GPU.** NVIDIA, ≥10 GB VRAM. Tested on RTX 4080 (16 GB). Smaller
-  cards may work at fp16 / int8 with `bitsandbytes` but aren't
-  documented here.
-- **Driver.** NVIDIA proprietary driver ≥550 (`nvidia-smi` should
-  report CUDA 12.4+).
-- **OS.** Any Linux with a recent kernel. Reference is Linux Mint /
-  Ubuntu-derived; nothing distro-specific.
-- **Python.** 3.10 or 3.11. NeMo 2.x doesn't yet support 3.12.
-- **Disk.** ~20 GB for the model + Python deps. The reference setup
-  pins this to a non-`$HOME` SSD via `HF_HOME=$ASR_ROOT/models/hf-cache`.
-
-### Stack
-
-| Component | Choice | Why |
-|---|---|---|
-| Web framework | FastAPI + `uvicorn[standard]` | Async file uploads, OpenAPI/Swagger for free at `/docs` |
-| ASR runtime | [NeMo Toolkit 2.0](https://github.com/NVIDIA/NeMo) `[asr]` extra | Official NVIDIA SpeechLM2 / SALM loader for Canary-Qwen |
-| Audio I/O | `librosa` + `soundfile` | Resample arbitrary inputs to 16 kHz mono before inference |
-| Auth | None (LAN-only, validated by upstream firewall) | The bearer header is accepted but not verified |
-| Process supervision | `systemd` unit | Auto-restart, journal log, model warm across reboots |
-| Firewall | `ufw` allow rules for LAN CIDRs | Keeps port 8000 off the public internet |
-
-### Reference server source
-
-A trimmed FastAPI shim that loads NeMo SALM, accepts uploads, resamples
-to 16 kHz mono, runs inference, and returns `{"text": "..."}`. Full
-setup notes — apt packages, virtualenv, model download via
-`huggingface-cli`, `systemd` unit, smoke tests with `arecord` /
-`ffmpeg`, ufw rules — live in
-[`docs/server-canary-qwen-setup.md`](docs/server-canary-qwen-setup.md).
-
-```python
-# $ASR_ROOT/git/canary-server/server.py  (abbreviated)
-import os, tempfile, torch, soundfile as sf, librosa
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import JSONResponse
-from nemo.collections.speechlm2.models import SALM
-
-MODEL_DIR = os.environ.get("MODEL_DIR", "$ASR_ROOT/models/canary-qwen-2.5b")
-DEVICE    = "cuda" if torch.cuda.is_available() else "cpu"
-DTYPE     = torch.bfloat16 if DEVICE == "cuda" else torch.float32
-
-model = SALM.from_pretrained(MODEL_DIR).to(DEVICE).to(DTYPE).eval()
-app   = FastAPI(title="Canary-Qwen 2.5B ASR (OpenAI-compatible)")
-
-@app.get("/health")
-def health():
-    return {"status": "ok", "device": DEVICE, "model": "nvidia/canary-qwen-2.5b"}
-
-@app.post("/v1/audio/transcriptions")
-async def transcribe(file: UploadFile = File(...),
-                     model_name: str | None = Form("canary-qwen-2.5b", alias="model"),
-                     prompt: str | None = Form(None)):
-    suffix = os.path.splitext(file.filename or "audio.wav")[1] or ".wav"
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
-        f.write(await file.read())
-        tmp_in = f.name
-    wav, _ = librosa.load(tmp_in, sr=16000, mono=True)
-    tmp_16k = tmp_in + ".16k.wav"
-    sf.write(tmp_16k, wav, 16000, subtype="PCM_16")
-
-    user_text = prompt or "Transcribe the following:"
-    prompts = [[{
-        "role": "user",
-        "content": f"{user_text} {model.audio_locator_tag}",
-        "audio": [tmp_16k],
-    }]]
-    with torch.inference_mode():
-        ids = model.generate(prompts=prompts, max_new_tokens=512)[0]
-    text = model.tokenizer.ids_to_text(ids.cpu().tolist()).strip()
-    return JSONResponse({"text": text})
-```
-
-### Operational quirks worth knowing
-
-- **Cold start is 30–90 seconds.** First model load reads ~10 GB of
-  weights from disk and JIT-compiles CUDA kernels. The systemd unit
-  uses `TimeoutStartSec=300` for this. After warm-up, real
-  transcription is sub-second on a 5-second clip.
-- **VoiceRider always sends 16 kHz mono Int16**, but the reference
-  server *also* runs `librosa.load(..., sr=16000, mono=True)` as a
-  defensive resample. Costs a few ms; saves a debugging session if a
-  future client doesn't honor the spec.
-- **The `prompt` field is forwarded to the model.** Canary-Qwen is a
-  SpeechLM, not a pure ASR model — it accepts a textual prompt and
-  steers transcription accordingly. VoiceRider doesn't currently send
-  one (omitted = "Transcribe the following:" default).
-- **Model weights belong on fast disk, not in `$HOME`.** The
-  reference setup pins `HF_HOME=$ASR_ROOT/models/hf-cache` so weights
-  live on whichever SSD `$ASR_ROOT` resolves to, not on the system
-  disk. This is purely operational, not a protocol requirement.
-
 ## Alternative servers
 
 If you don't want to run NeMo locally, anything that respects the
 [server protocol](#server-protocol) works:
 
-- **[Speaches](https://github.com/speaches-ai/speaches)** (formerly
-  faster-whisper-server) — drop-in OpenAI-compatible Whisper server,
-  CPU or GPU.
+- **[Speaches](https://github.com/speaches-ai/speaches)** — drop-in
+  OpenAI-compatible Whisper server, CPU or GPU.
 - **[vLLM](https://github.com/vllm-project/vllm)** with a Whisper
-  model — high-throughput serving framework, Whisper plug-in.
+  model — high-throughput serving framework.
 - **[whisper.cpp](https://github.com/ggerganov/whisper.cpp/tree/master/examples/server)
   HTTP server** — lightweight, CPU-only feasible.
-- **OpenAI's hosted `/v1/audio/transcriptions`** itself — paid, cloud,
-  but if you're fine with that and have a real API key, it just works.
-  Set `voicerider.bearerToken` to your real key and
-  `voicerider.serverURL` to `https://api.openai.com/v1/audio/transcriptions`.
-  Note: requires editing `Resources/Info.plist` to drop the LAN ATS
-  exception (HTTPS to OpenAI doesn't need one).
-- **Anything else.** A complete minimum-viable shim:
+- **OpenAI's hosted `/v1/audio/transcriptions`** — paid, cloud, but
+  works out of the box. Set `voicerider.bearerToken` to your API key
+  and `voicerider.serverURL` to
+  `https://api.openai.com/v1/audio/transcriptions`.
+- **Anything else.** A minimum-viable shim:
 
 ```python
 from fastapi import FastAPI, UploadFile, Form
-from your_asr import transcribe_wav    # bring your own
+from your_asr import transcribe_wav
 
 app = FastAPI()
 
@@ -423,13 +326,16 @@ async def transcribe(file: UploadFile, model: str = Form(...)):
     return {"text": text}
 ```
 
+See [`docs/server-canary-qwen-setup.md`](docs/server-canary-qwen-setup.md)
+for a full reference deployment using NVIDIA Canary-Qwen 2.5B on Linux.
+
 ## Tests
 
 ```bash
 ./build.sh test
 ```
 
-109 Swift Testing cases in 9 suites covering:
+214 Swift Testing cases in 23 suites covering:
 
 - Bearer-token + model-name allow-list (positive, boundary lengths,
   CRLF / null-byte / Unicode injection, RFC-grade fixtures)
@@ -442,8 +348,11 @@ async def transcribe(file: UploadFile, model: str = Form(...)):
   restore-when-unchanged, no-op-when-changed, nil saved)
 - AppState pairwise (in)equality, error message preservation
 - WAV header parser fixture (rejects empty/short/missing-magic, parses
-  16 kHz mono Int16 fixtures, computes derived fields for stereo
-  24-bit)
+  16 kHz mono Int16 fixtures, computes derived fields for stereo 24-bit)
+- Settings form validation (URL, model, bearer, round-trip, dirty detection)
+- Permissions snapshot (all 2^3 combos, cdhash detection)
+- Permissions window (snapshot diff, auto-close debounce, H1 suppression)
+- Permission row view (render idempotency, state flip, pinned strings)
 
 The audio integration test (real microphone) is gated on
 `VOICERIDER_RUN_AUDIO_TESTS=1` because CI typically lacks a default
@@ -511,44 +420,24 @@ in VoiceRider. Per Apple DTS engineer Quinn "The Eskimo!" in
 > unable to tell that version N+1 of your app is the 'same code' as
 > version N."
 
-Practical consequences:
+**Workaround when the prompt doesn't appear:**
 
-- **Every rebuild** of VoiceRider (including `./prod-build.sh
-  --install`) produces a new code-directory hash. macOS treats it as
-  a brand-new app, and any previously granted Accessibility / Input
-  Monitoring permissions are invalidated.
-- **The macOS prompt sometimes does not appear** after a re-grant
-  cycle. VoiceRider calls both `IOHIDRequestAccess()` (IOKit) and
-  `CGRequestListenEventAccess()` (Quartz) to maximize the chance, but
-  Apple confirms a known bug
-  ([Forum #128641](https://developer.apple.com/forums/thread/128641),
-  rdar://55284204) where the **`+` button in Input Monitoring is
-  hidden when the list is empty**.
-- **Workaround when the prompt doesn't appear:**
-    1. Open *System Settings → Privacy & Security → Input Monitoring*.
-    2. If you see no `+` button, first toggle ON some other app already
-       in the list to force the `+` to appear, then toggle that other
-       app back off.
-    3. Click `+`, navigate to `/Applications/VoiceRider.app`, select it.
-    4. Toggle VoiceRider ON. Repeat for *Accessibility* if needed.
-    5. Quit and relaunch VoiceRider.
-- **VoiceRider's cdhash-change alert** (the dialog that appears after
-  a rebuild) has a *Reveal in Finder* button that pre-selects
-  `VoiceRider.app` so you can drag it into the Settings panel.
+1. Open *System Settings → Privacy & Security → Input Monitoring*.
+2. If you see no `+` button, first toggle ON some other app already
+   in the list to force the `+` to appear, then toggle that other
+   app back off.
+3. Click `+`, navigate to `/Applications/VoiceRider.app`, select it.
+4. Toggle VoiceRider ON. Repeat for *Accessibility* if needed.
+5. Quit and relaunch VoiceRider.
 
-The only way to make grants persist across rebuilds is to sign with
-a stable identity (Apple Developer ID, $99/year). For end users
-installing once, this isn't an issue — the prompt fires on first
-launch, they grant, and grants persist until they update.
+Or: click the menu-bar icon → **Open Permission Settings…** to use the
+in-app permissions window, which deep-links to the exact pane and
+shows live status.
 
 ### Menu-bar icon not visible (notch'd MacBook Pro)
 
-macOS silently clips menu-bar items that don't fit between the app
-menus and the system status area, with no overflow indicator. Quit a
-few menu-bar apps, or use a third-party tool like Bartender / Hidden
-Bar. VoiceRider is running fine; the OS just isn't drawing the icon.
-
-You can verify it's running with:
+macOS silently clips menu-bar items that don't fit. Quit a few
+menu-bar apps, or use Bartender / Hidden Bar. Verify it's running:
 
 ```bash
 pgrep -lf VoiceRider.app/Contents/MacOS/VoiceRider
@@ -584,29 +473,19 @@ PRs welcome. Before opening one:
 ./prod-build.sh   # release + bundle (must succeed with zero warnings)
 ```
 
-The contributing rules — boiled down to the minimum a PR author needs
-to know — are:
+The contributing rules:
 
 - **No orphans.** Every internal `func` / `enum case` / property must
-  have at least one caller in `Sources/` or `Tests/`. Dead code is
-  removed in the same PR that introduces it.
+  have at least one caller in `Sources/` or `Tests/`.
 - **No dual paths.** Audio capture happens in exactly one place
   (`AudioRecorder`); transcription in one place (`Transcriber`); paste
   in one place (`Paster`); state lives on one type (`AppState` on
-  `AppDelegate`). New features extend these; they do not run in
-  parallel with them.
+  `AppDelegate`).
 - **No `print`, `try!`, `as!`, IUOs, or non-`final` classes** in
   production code. Use `os.Logger`, throwing functions, and explicit
-  unwrapping. The release build must compile under default Swift 5
-  mode with **zero warnings**.
-- **Match the existing concurrency model.** UI types are `@MainActor`;
-  audio happens on the audio render thread; subsystem state is
-  protected by `os_unfair_lock` where appropriate. See
-  `Sources/VoiceRider/AudioRecorder.swift` for the canonical pattern.
-- **Tests with fixtures, not mocks where possible.** New features
-  should ship with bytes-level fixtures (see
-  `Tests/VoiceRiderTests/TranscriberHTTPFixtures.swift` and
-  `WAVHeaderFixtures.swift` for the style).
+  unwrapping. Zero warnings on release build.
+- **Tests with fixtures, not mocks where possible.** See
+  `Tests/VoiceRiderTests/TranscriberHTTPFixtures.swift` for the style.
 
 ## License
 
