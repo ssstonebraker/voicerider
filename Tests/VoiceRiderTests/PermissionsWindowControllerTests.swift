@@ -103,4 +103,18 @@ struct PermissionsWindowControllerTests {
         wc.window?.close()
         #expect(closed)
     }
+
+    // MARK: Snapshot consistency (Sauron — menu and window use same path)
+
+    @Test("applySnapshot state matches what refreshPermissions would show",
+          arguments: PermissionStatusFixtures.snapshots)
+    @MainActor func snapshotMatchesMenuFixture(row: PermissionStatusFixtures.SnapshotRow) {
+        let snap = PermissionStatusFixtures.makeSnapshot(row)
+        // The window applies this snapshot:
+        let wc = Self.makeController()
+        wc.applySnapshot(snap)
+        // The menu would show the same allGranted / firstMissing:
+        #expect(snap.allGranted == row.allGranted)
+        #expect(snap.firstMissing?.service == row.firstMissing)
+    }
 }

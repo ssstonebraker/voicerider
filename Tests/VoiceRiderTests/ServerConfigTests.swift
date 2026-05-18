@@ -23,7 +23,7 @@ struct ServerConfigTests {
         let d = ServerConfig.defaults
         #expect(d.endpoint.absoluteString == "http://localhost:8000/v1/audio/transcriptions")
         #expect(d.model == "canary-qwen-2.5b")
-        #expect(d.bearer == "local-no-auth")
+        #expect(d.bearer == "")
     }
 
     @Test("load() returns defaults when the suite is empty")

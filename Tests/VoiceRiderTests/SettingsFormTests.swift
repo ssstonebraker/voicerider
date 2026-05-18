@@ -66,12 +66,12 @@ struct SettingsFormTests {
         #expect(!f.isModelValid)
     }
 
-    @Test("empty bearer reported as .empty(.bearer)")
+    @Test("empty bearer is valid (optional field)")
     func emptyBearer() {
         var f = SettingsForm.from(ServerConfig.defaults)
         f.bearer = ""
-        #expect(f.validate().contains(.empty(field: .bearer)))
-        #expect(!f.isBearerValid)
+        #expect(!f.validate().contains(.empty(field: .bearer)))
+        #expect(f.isBearerValid)
     }
 
     // MARK: URL malformed errors

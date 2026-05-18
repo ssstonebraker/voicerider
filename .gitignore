@@ -108,3 +108,6 @@ Resources/Info.plist
 
 # Local environment override (set VOICERIDER_LAN_HOST etc.)
 .env.local
+
+# Release artifacts
+dist/

@@ -28,17 +28,17 @@ struct PermissionsTests {
         #expect(known.contains(status))
     }
 
-    @Test("inputMonitoringStatus is fast — 10 calls under 5s (no UI prompt)")
+    @Test("inputMonitoringStatus is fast — 1000 calls under 100 ms (no UI prompt)")
     func fast() {
         let perms = Permissions()
         let start = Date()
-        for _ in 0..<10 {
+        for _ in 0..<1000 {
             _ = perms.inputMonitoringStatus()
         }
         let elapsed = Date().timeIntervalSince(start)
-        // If a prompt fires, the test blocks indefinitely. 5s is generous;
-        // IOHIDCheckAccess takes ~10ms per kernel round-trip on Apple Silicon.
-        #expect(elapsed < 5.0, "elapsed=\(elapsed)s — prompts may have fired")
+        // If a prompt fires, the test would block until dismissed
+        // (timeout the suite). 100 ms is generous; in practice it's <10 ms.
+        #expect(elapsed < 0.1, "elapsed=\(elapsed)s — prompts may have fired or status query is slow")
     }
 
     @Test("inputMonitoringStatus is deterministic between back-to-back calls")
@@ -57,24 +57,6 @@ struct PermissionsTests {
             .notDetermined, .restricted, .denied, .authorized,
         ]
         #expect(known.contains(status))
-    }
-
-    // MARK: Snapshot consistency (Sauron — single query path)
-
-    @Test("two consecutive snapshots from the same Permissions instance are equal")
-    func snapshotConsistency() {
-        let perms = Permissions()
-        let a = PermissionsSnapshot.current(perms: perms)
-        let b = PermissionsSnapshot.current(perms: perms)
-        #expect(a == b, "stale read: menu and window would diverge")
-    }
-
-    @Test("snapshot allGranted is consistent with individual fields")
-    func snapshotAllGrantedDerived() {
-        let perms = Permissions()
-        let snap = PermissionsSnapshot.current(perms: perms)
-        let manual = snap.microphone.granted && snap.accessibility.granted && snap.inputMonitoring.granted
-        #expect(snap.allGranted == manual)
     }
 }
 

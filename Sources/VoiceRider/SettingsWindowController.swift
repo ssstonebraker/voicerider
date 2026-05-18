@@ -350,7 +350,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         urlField.placeholderString = "http://host:8000/v1/audio/transcriptions"
         modelField.placeholderString = "canary-qwen-2.5b"
-        bearerField.placeholderString = "bearer token"
+        bearerField.placeholderString = "Optional. Leave blank if your server has no auth."
 
         for field: NSTextField in [urlField, modelField, bearerField] {
             field.target = self
@@ -388,7 +388,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         // at the bottom.
         let urlRow = labeledRow(label: "Server URL", control: urlField, status: urlStatus)
         let modelRow = labeledRow(label: "Model name", control: modelField, status: modelStatus)
-        let bearerRow = labeledRow(label: "Bearer token", control: bearerField, status: bearerStatus)
+        let bearerRow = labeledRow(label: "Bearer token (optional)", control: bearerField, status: bearerStatus)
 
         let testRow = NSStackView(views: [testButton, testSpinner, testStatus])
         testRow.orientation = .horizontal

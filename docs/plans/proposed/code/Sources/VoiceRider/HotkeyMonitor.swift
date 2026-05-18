@@ -54,7 +54,7 @@ final class HotkeyMonitor {
     /// any other keydown or modifier change. Long enough to filter
     /// accidental quick taps; short enough that real dictation doesn't
     /// feel laggy.
-    private static let qualifyMs: Int = 0
+    private static let qualifyMs: Int = 200
 
     /// Modifier bits whose presence at right-option-down means the user is
     /// composing a shortcut, not dictating.

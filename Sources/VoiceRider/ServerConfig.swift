@@ -34,7 +34,7 @@ struct ServerConfig: Equatable, Sendable {
     static let defaults = ServerConfig(
         endpoint: URL(string: "http://localhost:8000/v1/audio/transcriptions")!,
         model:    "canary-qwen-2.5b",
-        bearer:   "local-no-auth")
+        bearer:   "")
 
     // MARK: Load / Save
 

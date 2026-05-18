@@ -5,7 +5,7 @@ import AppKit
 /// Microphone, Accessibility, and Input Monitoring (P1) with a
 /// "Re-check Permissions" item (P2).
 @MainActor
-final class StatusItemController: NSObject, NSMenuDelegate {
+final class StatusItemController {
 
     private let perms: Permissions
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -18,9 +18,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let traceItem = NSMenuItem(title: "Show Live Trace…",
                                        action: #selector(traceAction),
                                        keyEquivalent: "")
-    private let settingsItem = NSMenuItem(title: "Settings…",
-                                           action: #selector(settingsAction),
-                                           keyEquivalent: ",")
     private let openPermsItem = NSMenuItem(title: "Open Permission Settings…",
                                            action: #selector(permsAction),
                                            keyEquivalent: "")
@@ -43,34 +40,21 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     /// Invoked when the user picks "Show Live Trace…".
     var onShowTrace: () -> Void = {}
 
-    /// Invoked when the user picks "Settings…".
-    var onOpenSettings: () -> Void = {}
-
     init(perms: Permissions) {
         self.perms = perms
-        super.init()
 
         recheckItem.target = self
         traceItem.target = self
-        settingsItem.target = self
         openPermsItem.target = self
         quitItem.target = self
 
         permsRoot.submenu = permsSubmenu
-        menu.delegate = self
 
         menu.addItem(permsRoot)
         menu.addItem(recheckItem)
         menu.addItem(.separator())
-        menu.addItem(settingsItem)
         menu.addItem(traceItem)
         menu.addItem(openPermsItem)
-        menu.addItem(.separator())
-        let aboutItem = NSMenuItem(title: "About VoiceRider",
-                                   action: #selector(aboutAction),
-                                   keyEquivalent: "")
-        aboutItem.target = self
-        menu.addItem(aboutItem)
         menu.addItem(.separator())
         menu.addItem(quitItem)
         statusItem.menu = menu
@@ -143,12 +127,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                     "mic=\(snap.microphone.granted) acc=\(snap.accessibility.granted) inp=\(snap.inputMonitoring.granted)")
     }
 
-    // MARK: NSMenuDelegate
-
-    func menuWillOpen(_ menu: NSMenu) {
-        refreshPermissions()
-    }
-
     @objc private func openServicePane(_ sender: NSMenuItem) {
         guard
             let raw = sender.representedObject as? String,
@@ -163,32 +141,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     @objc private func traceAction()  { onShowTrace() }
-    @objc private func settingsAction() {
-        Trace.settings("open", "")
-        onOpenSettings()
-    }
     @objc private func permsAction()  { onOpenPermissions() }
     @objc private func quitAction()   { onQuit() }
-
-    @objc private func aboutAction() {
-        let alert = NSAlert()
-        alert.messageText = "VoiceRider"
-        alert.informativeText = """
-            Created by Steve Stonebraker.
-
-            Licensed under the MIT License.
-
-            \(Self.repoURL)
-            """
-        alert.addButton(withTitle: "Open on GitHub")
-        alert.addButton(withTitle: "OK")
-        let resp = alert.runModal()
-        if resp == .alertFirstButtonReturn {
-            if let url = URL(string: Self.repoURL) {
-                NSWorkspace.shared.open(url)
-            }
-        }
-    }
-
-    static let repoURL = "https://github.com/ssstonebraker/voicerider"
 }

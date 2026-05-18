@@ -72,10 +72,8 @@ struct SettingsForm: Equatable {
             }
         }
 
-        // -- bearer ----------------------------------------------------
-        if bearer.isEmpty {
-            errors.append(.empty(field: .bearer))
-        } else {
+        // -- bearer (optional — empty means "no auth header") --------
+        if !bearer.isEmpty {
             do {
                 try Transcriber.validate(bearerToken: bearer)
             } catch {
@@ -108,7 +106,6 @@ struct SettingsForm: Equatable {
 
     var isBearerValid: Bool {
         !validate().contains { err in
-            if case .empty(.bearer) = err { return true }
             if case .bearerRegex = err { return true }
             return false
         }

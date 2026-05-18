@@ -29,6 +29,11 @@ final class PermissionsWindowController: NSWindowController, NSWindowDelegate {
     private var repollWork: DispatchWorkItem?
     private var observersRegistered = false
 
+    /// Delay before re-reading TCC state after a notification fires.
+    /// Apple's TCC writes are async; 0 works in most cases but a small
+    /// delay (e.g. 0.2) helps on slow machines or rapid toggles.
+    var repollDelay: TimeInterval = 0
+
     /// Fires from `windowWillClose` so the owner (AppDelegate) can drop
     /// its reference (single-instance invariant).
     var onClosed: () -> Void = {}
@@ -146,9 +151,8 @@ final class PermissionsWindowController: NSWindowController, NSWindowDelegate {
         delayedRepoll()
     }
 
-    /// Apple's TCC writes are async — immediate reads return stale data.
-    /// Delay 200 ms then re-poll. Multiple calls within the window coalesce
-    /// via the cancel-and-reschedule pattern.
+    /// Apple's TCC writes are async; re-poll after `repollDelay`.
+    /// Multiple calls within the window coalesce via cancel-and-reschedule.
     private func delayedRepoll() {
         repollWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
@@ -159,7 +163,7 @@ final class PermissionsWindowController: NSWindowController, NSWindowDelegate {
             }
         }
         repollWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + repollDelay, execute: work)
     }
 
     private func startTimer() {

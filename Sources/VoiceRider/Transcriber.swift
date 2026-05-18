@@ -75,14 +75,16 @@ final class Transcriber {
     /// Validates `model` against `modelNameRegex` and `bearer` against
     /// `bearerTokenRegex` at construction time. Both values are
     /// interpolated directly into HTTP request bytes (multipart body and
-    /// `Authorization` header respectively).
+    /// `Authorization` header respectively). Empty bearer skips auth.
     init(endpoint: URL,
          model: String,
          bearer: String,
          session: URLSession = .shared,
          timeout: TimeInterval = 15) throws {
         try Self.validate(modelName: model)
-        try Self.validate(bearerToken: bearer)
+        if !bearer.isEmpty {
+            try Self.validate(bearerToken: bearer)
+        }
         self.endpoint = endpoint
         self.model = model
         self.bearer = bearer
@@ -255,7 +257,9 @@ final class Transcriber {
                       timeout: TimeInterval) throws -> URLRequest {
         var req = URLRequest(url: endpoint, timeoutInterval: timeout)
         req.httpMethod = "POST"
-        req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+        if !bearer.isEmpty {
+            req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+        }
 
         let boundary = "voice-\(UUID().uuidString)"
         req.setValue("multipart/form-data; boundary=\(boundary)",

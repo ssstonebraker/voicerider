@@ -1,30 +1,28 @@
 # VoiceRider
 
-> Hold a key. Speak. Release. Text appears at your cursor.
+**Native macOS push-to-talk dictation.** Your server, your network, your data. Hold a key, speak, release, and text appears at your cursor.
 
-A native macOS push-to-talk dictation tool that lives in your menu bar. Pure
-Swift, zero-Electron, no cloud lock-in. Bring your own ASR server.
+[**Download for Mac**](https://github.com/ssstonebraker/voicerider/releases/latest/download/VoiceRider.dmg)
+
+macOS 13+ · Apple Silicon & Intel · Free & open source
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![100% Local Network](https://img.shields.io/badge/100%25-Local%20Network-green.svg)](#server-protocol)
 
 ```
-┌─────────┐    ┌───────────┐    ┌─────────┐    ┌──────────┐    ┌───────────┐
-│  Hold   │───▶│  Speak    │───▶│ Release │───▶│ Server   │───▶│ Text at   │
-│ Right ⌥ │    │ (record)  │    │ Right ⌥ │    │ returns  │    │ cursor    │
-└─────────┘    └───────────┘    └─────────┘    └──────────┘    └───────────┘
+Hold Right ⌥ ──▶ Speak ──▶ Release ──▶ Text at cursor
 ```
 
 ## Why
 
-Existing dictation tools either (a) ship 200 MB of Electron, (b) require a
-SaaS account, or (c) are abandoned and silently broken. VoiceRider is a
-~2 MB native menu-bar app that does exactly five things (hotkey, record,
-upload, paste, restore clipboard) and gets out of your way.
+I wanted a completely local-network push-to-speak ASR-integrated application
+and couldn't find one, so I built one.
 
 ## Features
 
-- **Push-to-talk hotkey:** hold Right Option, speak, release. A 200 ms
-  qualification window filters accidental taps; if you press another
-  modifier or key while held, the press is treated as a regular shortcut
-  and recording is cancelled.
+- **Push-to-talk hotkey:** hold Right Option, speak, release. If you press
+  another modifier or key while held, the press is treated as a regular
+  shortcut and recording is cancelled.
 - **Bring your own ASR server:** any HTTP endpoint that accepts
   `multipart/form-data` and returns `{"text": "..."}` works. See
   [server protocol](#server-protocol) below.
@@ -46,7 +44,7 @@ upload, paste, restore clipboard) and gets out of your way.
 ## Quick start
 
 ```bash
-git clone https://github.com/YOUR_USER/voicerider
+git clone https://github.com/ssstonebraker/voicerider
 cd voicerider
 ./prod-build.sh --install
 open /Applications/VoiceRider.app
@@ -80,8 +78,6 @@ sequenceDiagram
     participant Focus as Focused App
 
     User->>App: Hold Right Option
-    App->>Bar: 🎙 (arming)
-    Note over App: 200 ms qualification window
     App->>Bar: 🎙 (recording)
     User->>App: Speak
     User->>App: Release Right Option
@@ -103,7 +99,7 @@ No parallel `Bool` flags, no shadowed state in subsystems.
 stateDiagram-v2
     [*] --> idle
     idle --> arming: hotkey down
-    arming --> recording: held 200 ms
+    arming --> recording: held
     arming --> idle: released early / other key
     recording --> transcribing: hotkey up
     transcribing --> pasting: server returned text
@@ -361,7 +357,7 @@ input device.
 ## Hotkey
 
 Currently hard-coded to **Right Option** (`kVK_RightOption`, keycode
-61). The qualification window is 200 ms. Configurable hotkeys are
+61). Recording starts instantly on key-down. Configurable hotkeys are
 tracked for v0.2; see `docs/plans/`.
 
 ## Limitations
