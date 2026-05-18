@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="Resources/svg/AppIcon.svg" width="128" height="128" alt="VoiceRider">
+</p>
+
 # VoiceRider
 
 **Native macOS push-to-talk dictation.** Your server, your network, your data. Hold a key, speak, release, and text appears at your cursor.
@@ -224,7 +228,7 @@ If you change the host name, you also need to make sure your `Info.plist`'s
 `NSExceptionDomains` entry matches. App Transport Security blocks
 plain HTTP otherwise. See the next section.
 
-## Local config (don't commit your LAN host)
+## Local config
 
 `Resources/Info.plist` is **generated at build time** from
 `Resources/Info.plist.template`, so you can keep your real LAN
