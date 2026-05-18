@@ -4,7 +4,7 @@
 
 # VoiceRider
 
-**Native macOS push-to-talk dictation.** Your server, your network, your data. Hold a key, speak, release, and text appears at your cursor.
+**Native macOS push-to-talk dictation.** Bring your own speech-to-text server. VoiceRider is the native Mac client that connects to it: hold a key, speak, release, text appears at your cursor.
 
 [**Download for Mac**](https://github.com/ssstonebraker/voicerider/releases/latest/download/VoiceRider.dmg)
 
