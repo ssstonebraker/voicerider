@@ -16,8 +16,8 @@ Swift, zero-Electron, no cloud lock-in. Bring your own ASR server.
 
 Existing dictation tools either (a) ship 200 MB of Electron, (b) require a
 SaaS account, or (c) are abandoned and silently broken. VoiceRider is a
-~2 MB native menu-bar app that does exactly five things — hotkey, record,
-upload, paste, restore clipboard — and gets out of your way.
+~2 MB native menu-bar app that does exactly five things (hotkey, record,
+upload, paste, restore clipboard) and gets out of your way.
 
 ## Features
 
@@ -54,9 +54,9 @@ open /Applications/VoiceRider.app
 
 On first launch you'll be asked to grant three permissions:
 
-1. **Microphone** — to record your voice.
-2. **Accessibility** — to synthesize Cmd+V at the focused app.
-3. **Input Monitoring** — to detect Right Option globally.
+1. **Microphone**: to record your voice.
+2. **Accessibility**: to synthesize Cmd+V at the focused app.
+3. **Input Monitoring**: to detect Right Option globally.
 
 The first time you actually press the hotkey you'll also see macOS's
 **Local Network** prompt (the ASR endpoint is on a LAN host by default).
@@ -160,7 +160,7 @@ implementations).
 | `./prod-build.sh --skip-tests` | Same, faster, no test step. | Quick repackage. |
 | `./prod-build.sh --install` | Same as `prod-build.sh` then `cp -R VoiceRider.app /Applications/`. | First-time setup or reinstall. |
 
-`make` and `make verify` are also still available as alternatives — see
+`make` and `make verify` are also still available as alternatives; see
 the `Makefile`.
 
 ## Configuration
@@ -175,16 +175,16 @@ path is read by the next launch.
 Click the menu-bar mic icon → **Settings…**. The window has three
 fields:
 
-- **Server URL** — the full `/v1/audio/transcriptions` endpoint.
-- **Model name** — the value sent in the multipart `model` part.
-- **Bearer token** — the `Authorization: Bearer …` value (entered
+- **Server URL**: the full `/v1/audio/transcriptions` endpoint.
+- **Model name**: the value sent in the multipart `model` part.
+- **Bearer token**: the `Authorization: Bearer …` value (entered
   into a secure-text field; dots, not characters).
 
 A **Test Connection** button posts a 0.5-second silent WAV to the
 endpoint and reports the result inline (HTTP status, decode failure,
 ATS block, or "✓ silence accepted"). 15-second timeout to match
 dictation; the reference Canary-Qwen server's 30–90 s cold-start
-shows up here as a "timed out" message — a real dictation right
+shows up here as a "timed out" message, but a real dictation right
 after will succeed once the model is warm.
 
 **Save** persists to `UserDefaults` and rebuilds the in-memory
@@ -214,7 +214,7 @@ at launch:
 
 Malformed values are rejected at startup; the menu-bar icon will show
 ⚠️ with the precise reason. The strict regex defends against header /
-multipart-body injection — `voicerider.bearerToken` is interpolated
+multipart-body injection. `voicerider.bearerToken` is interpolated
 directly into the `Authorization` header, and `voicerider.modelName`
 into the multipart `model` part.
 
@@ -225,7 +225,7 @@ into the multipart `model` part.
 > Keychain backend is tracked for v0.2.
 
 If you change the host name, you also need to make sure your `Info.plist`'s
-`NSExceptionDomains` entry matches — App Transport Security blocks
+`NSExceptionDomains` entry matches. App Transport Security blocks
 plain HTTP otherwise. See the next section.
 
 ## Local config (don't commit your LAN host)
@@ -301,13 +301,13 @@ configured for one named host in `Resources/Info.plist`; see
 If you don't want to run NeMo locally, anything that respects the
 [server protocol](#server-protocol) works:
 
-- **[Speaches](https://github.com/speaches-ai/speaches)** — drop-in
+- **[Speaches](https://github.com/speaches-ai/speaches)**: drop-in
   OpenAI-compatible Whisper server, CPU or GPU.
 - **[vLLM](https://github.com/vllm-project/vllm)** with a Whisper
-  model — high-throughput serving framework.
+  model: high-throughput serving framework.
 - **[whisper.cpp](https://github.com/ggerganov/whisper.cpp/tree/master/examples/server)
-  HTTP server** — lightweight, CPU-only feasible.
-- **OpenAI's hosted `/v1/audio/transcriptions`** — paid, cloud, but
+  HTTP server**: lightweight, CPU-only feasible.
+- **OpenAI's hosted `/v1/audio/transcriptions`**: paid, cloud, but
   works out of the box. Set `voicerider.bearerToken` to your API key
   and `voicerider.serverURL` to
   `https://api.openai.com/v1/audio/transcriptions`.
@@ -456,7 +456,7 @@ Then relaunch from `/Applications/VoiceRider.app` to re-prompt.
 
 ## Project status
 
-v0.1 — works end-to-end. Tracked for v0.2:
+v0.1: works end-to-end. Tracked for v0.2:
 
 - Configurable hotkey (UserDefaults + small picker UI)
 - Keychain backend for `voicerider.bearerToken`
